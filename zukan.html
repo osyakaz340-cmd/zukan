@@ -1,0 +1,2298 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">                                                  <!-- 文字コード。日本語を正しく表示するため -->
+<meta name="viewport" content="width=device-width, initial-scale=1">   <!-- スマホで画面幅に合わせて表示するため -->
+<title>マイ生物図鑑</title>                                             <!-- ブラウザのタブに出る名前 -->
+<!-- ▼ ネット上に置いて「ホーム画面に追加」したとき用の設定（PCでファイルを直接開くときは使われない） -->
+<link rel="manifest" href="manifest.webmanifest">                       <!-- アプリとしての名前・アイコンなど -->
+<link rel="apple-touch-icon" href="apple-touch-icon.png">               <!-- iPhoneのホーム画面のアイコン -->
+<meta name="apple-mobile-web-app-capable" content="yes">                <!-- ホーム画面から開いたとき、アプリのように全画面で表示 -->
+<meta name="apple-mobile-web-app-title" content="生物図鑑">              <!-- ホーム画面のアイコンの下に出る名前 -->
+<meta name="theme-color" content="#2e7d32">                             <!-- スマホの上部の色 -->
+
+<!--
+  ▼ データの埋め込み場所（とても大事）
+  「図鑑ファイルとして保存」すると、ここに登録データ（写真も含む）が丸ごと書き込まれます。
+  そのため、保存した HTML ファイル1つだけで、アプリ本体とデータの両方が持ち運べます。
+  ※ 手で書き換えないでください。
+-->
+<script type="application/json" id="embedded-data">null</script>
+
+<style>
+/* ================================================================
+   見た目（CSS）の設定
+   色を変えたいときは、下の :root の中の色コードを変えるだけでOK
+   ================================================================ */
+:root {
+  --bg: #f4f6f1;          /* 背景色 */
+  --card: #ffffff;        /* カードの背景色 */
+  --text: #222;           /* 文字の色 */
+  --sub: #666;            /* 薄い文字の色 */
+  --main: #2e7d32;        /* メインの色（緑） */
+  --main-light: #e6f2e6;  /* メインの色の薄い版 */
+  --line: #d8dcd4;        /* 線の色 */
+  --warn: #c62828;        /* 警告の文字色（赤） */
+  --warn-bg: #fdecea;     /* 警告の背景色 */
+  --ok-bg: #e6f2e6;       /* OKメッセージの背景色 */
+}
+@media (prefers-color-scheme: dark) {  /* スマホ/PCがダークモードのときの色 */
+  :root {
+    --bg: #1a1e19; --card: #252a24; --text: #eee; --sub: #aaa;
+    --main: #81c784; --main-light: #2e3b2e; --line: #3d443b;
+    --warn: #ef9a9a; --warn-bg: #3d2626; --ok-bg: #263d28;
+  }
+}
+* { box-sizing: border-box; }                       /* 幅の計算を分かりやすくするおまじない */
+[hidden] { display: none !important; }              /* hidden が付いた要素は必ず隠す */
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif;
+  font-size: 15px; line-height: 1.5;
+}
+header {                                            /* 画面上部のタイトル部分 */
+  background: var(--main); color: #fff; padding: 10px 16px;
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+}
+@media (prefers-color-scheme: dark) { header { color: #1a1e19; } }
+header h1 { margin: 0; font-size: 18px; }
+#save-status { font-size: 12px; opacity: .9; }      /* 「未保存の変更あり」表示 */
+nav {                                               /* タブ（切り替えボタン）の並び */
+  display: flex; overflow-x: auto; background: var(--card);
+  border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5;
+}
+nav button {
+  flex: 1 0 auto; padding: 10px 12px; border: none; background: none; color: var(--text);
+  font-size: 14px; border-bottom: 3px solid transparent; cursor: pointer; white-space: nowrap;
+}
+nav button.active { border-bottom-color: var(--main); color: var(--main); font-weight: bold; } /* 選択中のタブ */
+main { max-width: 1100px; margin: 0 auto; padding: 12px 16px 60px; }
+
+/* ---- 絞り込み欄 ---- */
+#filters {
+  background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+  padding: 10px; margin-bottom: 12px;
+  display: grid; gap: 8px;
+}
+#filters { grid-template-columns: 1fr; }
+#filters summary { cursor: pointer; color: var(--main); font-size: 14px; }
+#f-active { color: var(--warn); font-size: 12px; margin-left: 6px; }  /* 条件を指定中なら表示 */
+.fgrid {                                            /* 詳しい条件の並び（画面幅で列数が変わる） */
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; margin-top: 8px;
+}
+label.f { display: flex; flex-direction: column; font-size: 12px; color: var(--sub); gap: 2px; }
+
+/* ---- 入力欄・ボタンの共通デザイン ---- */
+input, select, textarea {
+  font: inherit; color: var(--text); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 6px; padding: 7px 8px; width: 100%;
+}
+textarea { min-height: 60px; resize: vertical; }
+button.btn {
+  font: inherit; padding: 8px 14px; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--main); background: var(--card); color: var(--main);
+}
+button.btn.primary { background: var(--main); color: #fff; }  /* 目立たせたいボタン */
+@media (prefers-color-scheme: dark) { button.btn.primary { color: #1a1e19; } }
+button.btn.danger { border-color: var(--warn); color: var(--warn); }  /* 削除など危ないボタン */
+button.btn:disabled { opacity: .5; cursor: default; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+/* ---- カード一覧（種一覧・写真一覧） ---- */
+.count { color: var(--sub); font-size: 13px; margin: 4px 0 8px; }
+.grid {
+  display: grid; gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));  /* 画面幅に合わせて自動で列数が変わる */
+}
+.card {
+  background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+  overflow: hidden; cursor: pointer; display: flex; flex-direction: column;
+}
+.card img, .card .noimg {
+  width: 100%; aspect-ratio: 1 / 1; object-fit: cover; display: block; background: var(--main-light);
+}
+.card .noimg { display: flex; align-items: center; justify-content: center; color: var(--sub); font-size: 12px; }
+.card .body { padding: 6px 8px; font-size: 13px; }
+.card .name { font-weight: bold; font-size: 14px; }
+.card .sci { font-style: italic; color: var(--sub); font-size: 12px; }  /* 学名は斜体 */
+.tag {
+  display: inline-block; font-size: 11px; padding: 0 6px; border-radius: 10px;
+  background: var(--main-light); color: var(--main); margin: 1px 2px 1px 0;
+}
+.tag.unid { background: var(--warn-bg); color: var(--warn); }  /* 未同定タグは赤っぽく */
+.small { font-size: 12px; color: var(--sub); }
+.empty { text-align: center; color: var(--sub); padding: 40px 0; }
+
+/* ---- 登録フォーム ---- */
+.panel {
+  background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+  padding: 12px; margin-bottom: 12px;
+}
+.panel h2 { font-size: 16px; margin: 0 0 8px; }
+.form { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+.form .wide { grid-column: 1 / -1; }
+.form.two { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }  /* 短い入力欄はスマホでも2列に並べる */
+.msg { padding: 6px 10px; border-radius: 6px; font-size: 13px; }
+.msg.ok { background: var(--ok-bg); }
+.msg.warn { background: var(--warn-bg); color: var(--warn); }
+.pending-item {                                     /* 登録前の写真プレビュー1枚分 */
+  display: flex; gap: 8px; border: 1px solid var(--line); border-radius: 8px; padding: 6px; margin-bottom: 6px;
+}
+.pending-item img { width: 90px; height: 90px; object-fit: cover; border-radius: 6px; flex-shrink: 0; }
+.pending-item .opts { flex: 1; display: grid; gap: 4px; grid-template-columns: 1fr 1fr; align-content: start; }
+.pending-item .opts .wide { grid-column: 1 / -1; }
+
+/* ---- 詳細画面（モーダル＝画面の上に重なる窓） ---- */
+#modal {
+  position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 20;
+  display: flex; align-items: flex-start; justify-content: center; overflow-y: auto; padding: 16px;
+}
+#modal-box {
+  background: var(--bg); border-radius: 12px; width: 100%; max-width: 800px; padding: 14px; position: relative;
+}
+#modal-close {                                      /* 右上の × ボタン */
+  position: absolute; top: 8px; right: 8px; width: 36px; height: 36px; border-radius: 50%;
+  border: none; background: var(--card); color: var(--text); font-size: 20px; cursor: pointer;
+}
+.big-photo { width: 100%; max-height: 60vh; object-fit: contain; background: #000; border-radius: 8px; cursor: zoom-in; }
+dl.info { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; margin: 8px 0; font-size: 14px; }
+dl.info dt { color: var(--sub); }
+dl.info dd { margin: 0; }
+h3.stage-head { font-size: 14px; margin: 14px 0 6px; border-left: 4px solid var(--main); padding-left: 6px; }
+
+/* ---- 写真の全画面表示 ---- */
+#viewer {
+  position: fixed; inset: 0; background: #000; z-index: 30;
+  display: flex; align-items: center; justify-content: center; cursor: zoom-out;
+}
+#viewer img { max-width: 100%; max-height: 100%; object-fit: contain; }
+
+/* ---- 類似種との違い ---- */
+.cmp-row {                                          /* 種のページに並ぶ比較の1行 */
+  display: flex; gap: 10px; align-items: center; cursor: pointer; margin-bottom: 6px;
+  background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 6px;
+}
+.cmp-thumbs { display: flex; gap: 2px; flex-shrink: 0; }
+.cmp-thumbs img, .cmp-thumbs .noimg {
+  width: 56px; height: 56px; object-fit: cover; border-radius: 6px; background: var(--main-light);
+}
+.cmp-thumbs .noimg { display: flex; align-items: center; justify-content: center; font-size: 10px; color: var(--sub); }
+.cmp-excerpt {                                      /* メモの冒頭2行だけ見せる */
+  overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; white-space: pre-wrap;
+}
+.cmp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 8px 0 12px; }  /* 左右に2つ並べる（スマホでも） */
+.cmp-side { min-width: 0; }
+.cmp-name { font-weight: bold; color: var(--main); cursor: pointer; margin-bottom: 4px; }
+.cmp-big {
+  width: 100%; aspect-ratio: 1 / 1; object-fit: contain; background: #000; border-radius: 8px; cursor: zoom-in; display: block;
+}
+.cmp-big.noimg { display: flex; align-items: center; justify-content: center; color: #aaa; font-size: 13px; cursor: default; }
+.cmp-strip { display: flex; gap: 4px; overflow-x: auto; margin-top: 4px; padding-bottom: 2px; }  /* 写真を選ぶ帯（横にスクロール） */
+.cmp-strip img {
+  width: 44px; height: 44px; object-fit: cover; border-radius: 4px; flex-shrink: 0; cursor: pointer;
+  opacity: .55; border: 2px solid transparent;
+}
+.cmp-strip img.sel { opacity: 1; border-color: var(--main); }  /* 今表示している写真 */
+
+/* ---- 画面上部の検索窓 ---- */
+#searchbar { background: var(--main); padding: 0 16px 10px; }
+#searchbar .box { position: relative; display: flex; gap: 6px; max-width: 1100px; margin: 0 auto; }
+#q {
+  flex: 1; border: none; border-radius: 20px; padding: 9px 14px; font-size: 16px;  /* 16px以上だとiPhoneで勝手に拡大されない */
+  background: #fff; color: #222;
+}
+#q-btn {
+  border: none; border-radius: 20px; padding: 0 16px; cursor: pointer; font: inherit;
+  background: rgba(255,255,255,.25); color: #fff;
+}
+@media (prefers-color-scheme: dark) {
+  #q { background: var(--card); color: var(--text); }
+  #q-btn { color: #1a1e19; background: rgba(0,0,0,.15); }
+}
+#q-results {                                        /* 検索結果の一覧（検索窓の下に重ねて出す） */
+  position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 15;
+  background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: 0 4px 14px rgba(0,0,0,.25); max-height: 65vh; overflow-y: auto;
+}
+.q-item { display: flex; gap: 10px; align-items: center; padding: 8px 10px; cursor: pointer; border-bottom: 1px solid var(--line); }
+.q-item:last-child { border-bottom: none; }
+.q-item:hover, .q-item.sel { background: var(--main-light); }  /* マウスを乗せた／矢印キーで選んだ項目 */
+.q-item img, .q-item .q-noimg {
+  width: 52px; height: 52px; border-radius: 6px; object-fit: cover; flex-shrink: 0; background: var(--main-light);
+}
+.q-item .q-noimg { display: flex; align-items: center; justify-content: center; font-size: 10px; color: var(--sub); }
+.q-msg { padding: 12px; font-size: 14px; }
+
+/* ---- 右下の「＋ 登録する」ボタン（いつも画面に浮いている） ---- */
+#fab {
+  position: fixed; right: 16px; bottom: 20px; z-index: 10;
+  padding: 14px 22px; border: none; border-radius: 28px; cursor: pointer;
+  background: var(--main); color: #fff; font-size: 16px; font-weight: bold;
+  box-shadow: 0 3px 10px rgba(0,0,0,.3);
+}
+@media (prefers-color-scheme: dark) { #fab { color: #1a1e19; } }
+.reg-head { display: flex; align-items: center; justify-content: space-between; margin: 4px 0; }
+.reg-head h2 { margin: 0; font-size: 20px; }
+.opt { font-size: 11px; color: var(--sub); font-weight: normal; margin-left: 4px; }  /* 「任意」の表示 */
+
+/* ---- 画面下に一瞬出るお知らせ ---- */
+#toast {
+  position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%);
+  background: #333; color: #fff; padding: 8px 16px; border-radius: 20px; z-index: 40; font-size: 14px;
+  max-width: 90vw;
+}
+</style>
+</head>
+
+<body>
+<!-- ================================================================
+     画面の骨組み（HTML）
+     中身の多くは、下の JavaScript が後から書き込みます
+     ================================================================ -->
+
+<header>
+  <h1>🦋 マイ生物図鑑</h1>
+  <span id="save-status"></span>  <!-- 保存状態をここに表示 -->
+</header>
+
+<!-- ▼ 検索窓。名前を入力すると、一致する生物が下に一覧で出る -->
+<div id="searchbar">
+  <div class="box">
+    <input id="q" type="search" placeholder="🔍 生物名で検索（和名・学名）" autocomplete="off"
+           oninput="onSearchInput()" onkeydown="onSearchKey(event)" onfocus="onSearchInput()">
+    <button id="q-btn" onclick="runSearch()">検索</button>
+    <div id="q-results" hidden></div>  <!-- 検索結果がここに出る -->
+  </div>
+</div>
+
+<!-- タブ。onclick="showTab('…')" で、押したときに showTab という命令を実行する -->
+<nav>
+  <button data-tab="species" onclick="showTab('species')">種の一覧</button>
+  <button data-tab="photos"  onclick="showTab('photos')">記録・写真</button>
+  <button data-tab="unid"    onclick="showTab('unid')">未同定</button>
+  <button data-tab="register" onclick="openRegister()">＋ 登録</button>
+  <button data-tab="data"    onclick="showTab('data')">データ・保存</button>
+</nav>
+
+<main>
+  <!-- ▼ 絞り込み欄（種の一覧・記録・写真・未同定 の3つのタブで共通） -->
+  <div id="filters">
+    <label class="f wide">キーワード（名前・学名・分類・メモ）
+      <input id="f-keyword" type="search" placeholder="例：アゲハ、チョウ目、Papilio" oninput="renderLists()">
+    </label>
+    <!-- ▼ 詳しい条件。<details> はタップで開閉できる入れ物（スマホで画面を広く使うため） -->
+    <details class="wide" id="f-more">
+    <summary>詳しく絞り込む（分類群・場所・季節・成長段階…）<span id="f-active"></span></summary>
+    <div class="fgrid">
+    <label class="f">分類群
+      <select id="f-group" onchange="renderLists()"></select>     <!-- 選択肢は JavaScript で作る -->
+    </label>
+    <label class="f">場所
+      <select id="f-place" onchange="renderLists()"></select>
+    </label>
+    <label class="f">季節
+      <select id="f-season" onchange="renderLists()">
+        <option value="">すべて</option>
+        <option value="春">春（3〜5月）</option>
+        <option value="夏">夏（6〜8月）</option>
+        <option value="秋">秋（9〜11月）</option>
+        <option value="冬">冬（12〜2月）</option>
+      </select>
+    </label>
+    <label class="f">月
+      <select id="f-month" onchange="renderLists()"></select>
+    </label>
+    <label class="f">成長段階
+      <select id="f-stage" onchange="renderLists()"></select>
+    </label>
+    <label class="f">性別
+      <select id="f-sex" onchange="renderLists()"></select>
+    </label>
+    <label class="f" id="f-sort-wrap">並び順
+      <select id="f-sort" onchange="renderLists()">
+        <option value="name">名前順</option>
+        <option value="group">分類順</option>
+        <option value="new">新しく登録した順</option>
+        <option value="date">観察日が新しい順</option>
+      </select>
+    </label>
+    <label class="f">&nbsp;
+      <button class="btn" onclick="resetFilters()">条件をクリア</button>
+    </label>
+    </div>
+    </details>
+  </div>
+
+  <!-- ▼ 各タブの中身。表示中のタブ以外は hidden で隠す -->
+  <section id="page-species"></section>
+  <section id="page-photos" hidden></section>
+  <section id="page-unid" hidden></section>
+
+  <!-- ▼ 登録画面（右下の「＋ 登録する」ボタンで開く） -->
+  <section id="page-register" hidden>
+    <div class="reg-head">
+      <h2>生物を登録する</h2>
+      <button class="btn" onclick="cancelRegister()">やめる</button>
+    </div>
+    <p class="small" style="margin:0 0 10px">
+      <b>分かる項目だけ入力すればOK</b>です（すべて任意）。名前が分からないときは空欄のままで、「未同定」にまとめて保存されます。
+    </p>
+
+    <!-- ① 生物名 -->
+    <div class="panel">
+      <h2>生物名<span class="opt">任意</span></h2>
+      <div class="form">
+        <label class="f wide">種名（和名）
+          <input id="r-name" list="dl-species" placeholder="例：ナミアゲハ（分からなければ空欄）" oninput="onRegisterNameInput()">
+        </label>
+        <label class="f wide">学名
+          <input id="r-sci" placeholder="例：Papilio xuthus" oninput="onRegisterNameInput()">
+        </label>
+        <div class="wide" id="r-check"></div>  <!-- 登録被りチェックの結果をここに表示 -->
+      </div>
+    </div>
+
+    <!-- ② 分類（登録済みの種を選んだときは隠れる） -->
+    <div class="panel" id="r-taxon-panel">
+      <h2>分類（分かるところまで）<span class="opt">任意</span></h2>
+      <p class="small" style="margin:0 0 6px">大きいグループから順に、分かる所まで入力してください。例：「昆虫」と「チョウ目」だけ、でもOK。</p>
+      <div class="form two">
+        <label class="f">分類群（大まかなグループ）<input id="r-group" list="dl-group" placeholder="例：昆虫、鳥、植物"></label>
+        <label class="f">綱（こう）<input id="r-cls" list="dl-cls" placeholder="例：昆虫綱"></label>
+        <label class="f">目（もく）<input id="r-order" list="dl-order" placeholder="例：チョウ目"></label>
+        <label class="f">科（か）<input id="r-family" list="dl-family" placeholder="例：アゲハチョウ科"></label>
+        <label class="f">属（ぞく）<input id="r-genus" list="dl-genus" placeholder="例：アゲハチョウ属"></label>
+      </div>
+    </div>
+
+    <!-- ③ 観察場所 -->
+    <div class="panel">
+      <h2>観察場所<span class="opt">任意</span></h2>
+      <input id="r-place" list="dl-place" placeholder="例：〇〇公園（いつも同じ書き方にすると絞り込みやすい）">
+    </div>
+
+    <!-- ④ 観察時期 -->
+    <div class="panel">
+      <h2>観察時期<span class="opt">任意</span></h2>
+      <div class="form two">
+        <label class="f">日付<input id="r-date" type="date"></label>
+        <label class="f">時刻<input id="r-time" type="time"></label>
+      </div>
+      <p class="small" style="margin:8px 0 4px">日付がはっきりしないときは、分かる範囲で：</p>
+      <div class="form two">
+        <label class="f">年<input id="r-year" type="number" min="1900" max="2100" placeholder="例：2025"></label>
+        <label class="f">月<select id="r-month"></select></label>
+      </div>
+    </div>
+
+    <!-- ⑤ 様子・メモ -->
+    <div class="panel">
+      <h2>様子・メモ<span class="opt">任意</span></h2>
+      <div class="form two">
+        <label class="f">成長段階<select id="r-stage"></select></label>   <!-- 選択肢は JavaScript で作る -->
+        <label class="f">性別<select id="r-sex"></select></label>
+        <label class="f wide">メモ<textarea id="r-memo" placeholder="食草、行動、天気、特徴など"></textarea></label>
+      </div>
+    </div>
+
+    <!-- ⑥ 写真 -->
+    <div class="panel">
+      <h2>写真（複数選択OK）<span class="opt">任意</span></h2>
+      <input id="r-files" type="file" accept="image/*" multiple onchange="onFilesSelected(this.files)">
+      <label class="small" style="display:flex; gap:6px; align-items:flex-start; margin-top:6px">
+        <input id="r-autodate" type="checkbox" checked style="width:auto">
+        写真に撮影日時が記録されていれば、その日時を観察時期として使う
+      </label>
+      <p class="small">写真ごとに成長段階・性別を変えられます（例：オスとメス、成虫と幼虫を一度に登録）。</p>
+      <div id="r-pending"></div>  <!-- 選んだ写真のプレビューがここに並ぶ -->
+    </div>
+
+    <div class="row">
+      <button class="btn primary" id="r-submit" onclick="submitRegister()">登録する</button>
+      <button class="btn" onclick="resetRegisterForm()">入力をクリア</button>
+      <span id="r-progress" class="small"></span>
+    </div>
+  </section>
+
+  <!-- ▼ データ・保存タブ -->
+  <section id="page-data" hidden></section>
+</main>
+
+<!-- 右下に浮かぶ「登録する」ボタン -->
+<button id="fab" onclick="openRegister()">＋ 登録する</button>
+
+<!-- 入力候補リスト（入力欄で候補が出るようになる）。中身は JavaScript で作る -->
+<datalist id="dl-species"></datalist>
+<datalist id="dl-group"></datalist>
+<datalist id="dl-order"></datalist>
+<datalist id="dl-cls"></datalist>
+<datalist id="dl-family"></datalist>
+<datalist id="dl-genus"></datalist>
+<datalist id="dl-place"></datalist>
+
+<!-- 詳細画面（モーダル） -->
+<div id="modal" hidden onclick="if (event.target === this) closeModal()">  <!-- 黒い部分を押すと閉じる -->
+  <div id="modal-box">
+    <button id="modal-close" onclick="closeModal()">×</button>
+    <div id="modal-content"></div>
+  </div>
+</div>
+
+<!-- 写真の全画面表示 -->
+<div id="viewer" hidden onclick="this.hidden = true"><img id="viewer-img" alt=""></div>
+
+<!-- お知らせ表示 -->
+<div id="toast" hidden></div>
+
+<!-- データ読み込み用の隠しファイル選択欄 -->
+<input id="import-file" type="file" accept=".json,.html,.htm,application/json,text/html" hidden onchange="importFile(this.files[0]); this.value=''">
+
+<script>
+// ===================================================================
+//  ここから JavaScript（アプリの動き）
+//  「//」から右はメモ（コメント）で、プログラムとしては無視されます。
+// ===================================================================
+
+// このファイル自身の中身（HTML全体）を、何も変更されないうちに控えておく。
+// 「図鑑ファイルとして保存」のとき、これにデータを埋め込んで新しいファイルを作る。
+const APP_TEMPLATE = document.documentElement.outerHTML;
+
+// -------------------------------------------------------------------
+// 1. 設定（ここを書き換えると動きを変えられます）
+// -------------------------------------------------------------------
+const CONFIG = {
+  IMAGE_MAX: 1600,      // 保存する写真の長い辺の最大ピクセル数（小さくするとファイルが軽くなる）
+  IMAGE_QUALITY: 0.82,  // 写真の画質（0〜1。小さいほど軽いが粗くなる）
+  THUMB_MAX: 320,       // 一覧に出す小さい写真（サムネイル）の大きさ
+  THUMB_QUALITY: 0.7,   // サムネイルの画質
+};
+
+// 成長段階の選択肢。増やしたいときはここに足すだけでOK（例：'若齢幼虫'）
+// この並び順が、種の詳細画面での表示順にもなる
+const STAGES = ['成体', '幼虫', '蛹', '幼体', '卵', '花', '果実・種子', '巣・痕跡', 'その他'];
+
+// 性別の選択肢
+const SEXES = ['不明', 'オス', 'メス'];
+
+// 分類の段階（データの項目名と、画面に出す名前）。大きいグループから順に並べる
+const TAXON_KEYS = [
+  ['group', '分類群'],
+  ['cls', '綱'],
+  ['order', '目'],
+  ['family', '科'],
+  ['genus', '属'],
+];
+
+// 季節と月の対応
+const SEASON_OF_MONTH = { 1:'冬', 2:'冬', 3:'春', 4:'春', 5:'春', 6:'夏', 7:'夏', 8:'夏', 9:'秋', 10:'秋', 11:'秋', 12:'冬' };
+
+// -------------------------------------------------------------------
+// 2. アプリ全体のデータ（state ＝ 状態）
+// -------------------------------------------------------------------
+// species（種）1件の形：
+//   { id, name:和名, sciName:学名, group:分類群, cls:綱, order:目, family:科, genus:属, memo, createdAt }
+// photos（観察記録）1件の形：※ 写真なしの記録もある（そのときは image と thumb が空）
+//   { id, speciesId:どの種の記録か(未同定なら null), image:写真データ, thumb:サムネイル,
+//     hash:同じ写真の二重登録を防ぐための指紋, date:'2026-05-03', time:'14:20',
+//     year:年, month:月（日付が分からないとき用）, place:場所, stage:成長段階, sex:性別, memo,
+//     group/cls/order/family/genus:未同定のときの「分かるところまで」の分類, createdAt }
+// comparisons（類似種との比較）1件の形：※ 2つの種の「組」なので、どちらの種のページにも表示される
+//   { id, a:種ID, b:種ID, memo:違いのメモ, photoA:aの側に表示する写真ID, photoB:bの側に表示する写真ID,
+//     createdAt, updatedAt }
+const state = {
+  species: [],     // 種のリスト
+  photos: [],      // 写真のリスト
+  comparisons: [], // 類似種との比較のリスト
+  updatedAt: '',   // 最後にデータを変更した日時
+  savedAt: '',     // 最後にファイルへ保存した日時
+  tab: 'species',  // 今表示しているタブ
+  prevTab: 'species',  // 登録画面を開く前のタブ（「やめる」で戻る先）
+};
+
+let idb = null;    // ブラウザ内データベース（IndexedDB）への接続。使えない環境では null のまま
+let pending = [];  // 登録タブで選んだ、まだ登録していない写真たち
+
+// -------------------------------------------------------------------
+// 3. ちょっとした便利な道具（関数）
+// -------------------------------------------------------------------
+
+// document.querySelector を短く書くための道具。$('#abc') で id="abc" の要素を取れる
+function $(selector) { return document.querySelector(selector); }
+
+// 文字を画面に安全に表示するための変換（< や > をそのまま出すと画面が壊れるため）
+function esc(text) {
+  return String(text ?? '')                    // null や undefined なら空文字にする
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// 重複しないID（識別番号）を作る。時刻＋ランダムな文字
+function newId() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+// 今の日時を「2026-10-17T12:34:56.000Z」の形の文字で返す
+function nowIso() { return new Date().toISOString(); }
+
+// 名前の比較用に文字をそろえる（登録被りチェックで使う）
+//  ・全角英数字→半角、半角カナ→全角（NFKC という変換）
+//  ・ひらがな→カタカナ（「なみあげは」と「ナミアゲハ」を同じとみなす）
+//  ・空白を消す、英字を小文字にする
+function normalize(text) {
+  return String(text ?? '')
+    .normalize('NFKC')                                   // 全角/半角のゆれをそろえる
+    .replace(/[ぁ-ゖ]/g, ch =>                   // ひらがなを1文字ずつ…
+      String.fromCharCode(ch.charCodeAt(0) + 0x60))      // …カタカナに変える（文字コードを0x60ずらす）
+    .replace(/\s+/g, '')                                  // 空白をすべて消す
+    .toLowerCase();                                       // 英字を小文字に
+}
+
+// 記録の観察月（1〜12）を返す。日付があればそこから、なければ「月」の欄から。分からなければ 0
+function obsMonth(p) {
+  return p.date ? Number(p.date.slice(5, 7)) : (Number(p.month) || 0);
+}
+
+// 並べ替え用の日付文字（'2026-05-03' や '2026-05'）。日付も年も分からなければ空
+function dateKey(p) {
+  if (p.date) return p.date + ' ' + (p.time || '');
+  if (p.year) return String(p.year).padStart(4, '0') + '-' + String(p.month || 0).padStart(2, '0');
+  return '';
+}
+
+// 観察時期を見やすい文字にする（'2025/05/03 14:20'、'2025年5月ごろ' など）
+function fmtObs(p) {
+  if (p.date) return fmtDate(p.date, p.time);
+  if (p.year && p.month) return `${p.year}年${p.month}月ごろ`;
+  if (p.year) return `${p.year}年`;
+  if (p.month) return `${p.month}月ごろ`;
+  return '時期不明';
+}
+
+// 分類を「昆虫 › チョウ目 › アゲハチョウ科」のようにつなげる（空欄は飛ばす）
+function taxonText(obj) {
+  return TAXON_KEYS.map(([key]) => obj[key]).filter(v => v).join(' › ');
+}
+
+// 古い形式のデータを今の形式にそろえる（前の版で作ったデータもそのまま使えるように）
+function upgradeSpecies(s) {
+  return { sciName: '', group: '', cls: '', order: '', family: '', genus: '', memo: '', ...s };
+}
+function upgradePhoto(p) {
+  const q = { image: '', thumb: '', hash: '', date: '', time: '', year: '', month: '', place: '',
+              stage: STAGES[0], sex: SEXES[0], memo: '',
+              group: '', cls: '', order: '', family: '', genus: '', ...p };  // 足りない項目を空で補う
+  if (q.guess && !q.group) q.group = q.guess;            // 前の版の「推定分類」は「分類群」欄に移す
+  delete q.guess;
+  return q;
+}
+
+// 日付の見た目を整える '2026-05-03' → '2026/05/03'
+function fmtDate(date, time) {
+  if (!date) return '日付なし';
+  return date.replace(/-/g, '/') + (time ? ' ' + time : '');
+}
+
+// 画面下に数秒だけメッセージを出す
+let toastTimer = null;
+function toast(message) {
+  const t = $('#toast');
+  t.textContent = message;
+  t.hidden = false;
+  clearTimeout(toastTimer);                              // 前のタイマーを止める
+  toastTimer = setTimeout(() => { t.hidden = true; }, 3000);  // 3秒後に消す
+}
+
+// 種のIDから種のデータを探す
+function getSpecies(id) { return state.species.find(s => s.id === id); }
+
+// 写真のIDから写真のデータを探す
+function getPhoto(id) { return state.photos.find(p => p.id === id); }
+
+// ある種の写真をすべて集める
+function photosOf(speciesId) { return state.photos.filter(p => p.speciesId === speciesId); }
+
+// 種の代表写真を選ぶ（成体の写真があればそれ、なければ最初の写真）。写真なしの記録は除く
+function coverPhoto(speciesId) {
+  const list = photosOf(speciesId).filter(p => p.thumb);
+  return list.find(p => p.stage === '成体') || list[0] || null;
+}
+
+// 写真に写っている「種名」を返す（未同定なら '未同定'）
+function photoTitle(p) {
+  const sp = getSpecies(p.speciesId);
+  return sp ? sp.name : '未同定';
+}
+
+// <select> の中身（選択肢）を作る。先頭に「すべて」を付ける
+function optionsHtml(values, selected, firstLabel = 'すべて') {
+  let html = firstLabel === null ? '' : `<option value="">${firstLabel}</option>`;
+  for (const v of values) {
+    html += `<option value="${esc(v)}" ${v === selected ? 'selected' : ''}>${esc(v)}</option>`;
+  }
+  return html;
+}
+
+// 配列から空でない値を重複なしで取り出し、五十音順に並べる
+function uniqueSorted(values) {
+  return [...new Set(values.filter(v => v))].sort((a, b) => a.localeCompare(b, 'ja'));
+}
+
+// -------------------------------------------------------------------
+// 4. 登録被りチェック（このアプリの大事な機能）
+// -------------------------------------------------------------------
+// 名前（和名か学名）を受け取り、
+//   exact   … 完全に同じ名前の種（あれば、それに写真を追加する）
+//   similar … 名前の一部が同じ、似ている種（間違いの可能性があるので注意を出す）
+// を返す。excludeId は「自分自身は除く」ときに使う（種の編集時）
+function checkName(name, excludeId = null) {
+  const n = normalize(name);
+  if (!n) return { exact: null, similar: [] };           // 名前が空なら何もしない
+  const others = state.species.filter(s => s.id !== excludeId);
+  const exact = others.find(s =>
+    normalize(s.name) === n || (s.sciName && normalize(s.sciName) === n));  // 和名か学名が一致
+  if (exact) return { exact, similar: [] };
+  const similar = n.length < 2 ? [] : others.filter(s => {
+    const sn = normalize(s.name);
+    return sn.includes(n) || n.includes(sn);             // どちらかがもう一方を含んでいる
+  }).slice(0, 6);                                        // 多すぎると見づらいので最大6件
+  return { exact: null, similar };
+}
+
+// -------------------------------------------------------------------
+// 5. ブラウザ内への保存（IndexedDB）
+//    登録したデータは、まずブラウザの中に自動保存されます。
+//    ファイル（USBなど）への保存は「データ・保存」タブから行います。
+// -------------------------------------------------------------------
+const DB_NAME = 'my-seibutsu-zukan';  // データベースの名前
+
+// データベースを開く（初回は入れ物を作る）
+function openDB() {
+  return new Promise((resolve, reject) => {             // Promise ＝ 「終わったら知らせる」仕組み
+    const req = indexedDB.open(DB_NAME, 2);             // 2 ＝ データベースの版（箱を増やしたら数字を上げる）
+    req.onupgradeneeded = () => {                        // 初めて開いたとき、または版が上がったとき
+      const db = req.result;
+      const make = name => {                             // まだ無い箱だけ作る（前の版のデータは消えない）
+        if (!db.objectStoreNames.contains(name)) db.createObjectStore(name, { keyPath: name === 'meta' ? 'key' : 'id' });
+      };
+      make('species');      // 種を入れる箱
+      make('photos');       // 写真を入れる箱
+      make('meta');         // 更新日時などを入れる箱
+      make('comparisons');  // 類似種との比較を入れる箱（版2で追加）
+    };
+    req.onsuccess = () => resolve(req.result);           // 成功
+    req.onerror = () => reject(req.error);               // 失敗
+  });
+}
+
+// 箱（store）の中身を全部取り出す
+function idbGetAll(store) {
+  if (!idb) return Promise.resolve([]);                  // データベースが使えないときは空
+  return new Promise((resolve, reject) => {
+    const req = idb.transaction(store).objectStore(store).getAll();
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+// 箱にデータを入れる（同じIDがあれば上書き）。複数まとめて入れられる
+function idbPut(store, items) {
+  if (!idb) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const tx = idb.transaction(store, 'readwrite');      // 書き込みモードで開く
+    for (const item of [].concat(items)) tx.objectStore(store).put(item);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+// 箱からデータを消す
+function idbDelete(store, id) {
+  if (!idb) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const tx = idb.transaction(store, 'readwrite');
+    tx.objectStore(store).delete(id);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+// 箱を空にする
+function idbClear(store) {
+  if (!idb) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const tx = idb.transaction(store, 'readwrite');
+    tx.objectStore(store).clear();
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+// 「データが変更された」ことを記録する（未保存表示のため）
+async function touch() {
+  state.updatedAt = nowIso();
+  await idbPut('meta', { key: 'times', updatedAt: state.updatedAt, savedAt: state.savedAt });
+  renderSaveStatus();
+}
+
+// 種を保存（新規でも更新でもOK）
+async function saveSpecies(sp) {
+  const i = state.species.findIndex(s => s.id === sp.id);
+  if (i >= 0) state.species[i] = sp; else state.species.push(sp);  // あれば置き換え、なければ追加
+  await idbPut('species', sp);
+  await touch();
+}
+
+// 写真を保存（新規でも更新でもOK）
+async function savePhoto(p) {
+  const i = state.photos.findIndex(x => x.id === p.id);
+  if (i >= 0) state.photos[i] = p; else state.photos.push(p);
+  await idbPut('photos', p);
+  await touch();
+}
+
+// データを丸ごと入れ替える（ファイルを読み込んだときなど）
+async function replaceAllData(data) {
+  state.species = (data.species || []).map(upgradeSpecies);  // 古い形式なら今の形式にそろえる
+  state.photos = (data.photos || []).map(upgradePhoto);
+  state.comparisons = data.comparisons || [];            // 前の版のデータには無いので、その場合は空
+  state.updatedAt = data.updatedAt || nowIso();
+  state.savedAt = data.savedAt || '';
+  await idbClear('species');
+  await idbClear('photos');
+  await idbClear('comparisons');
+  await idbPut('species', state.species);
+  await idbPut('photos', state.photos);
+  await idbPut('comparisons', state.comparisons);
+  await idbPut('meta', { key: 'times', updatedAt: state.updatedAt, savedAt: state.savedAt });
+}
+
+// -------------------------------------------------------------------
+// 6. 写真の処理
+// -------------------------------------------------------------------
+
+// ファイルの中身から「指紋」（ハッシュ値）を計算する。
+// 同じ写真ファイルなら同じ値になるので、二重登録の発見に使える。（FNV-1a という簡単な計算方法）
+function hashBytes(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let h = 0x811c9dc5;                                    // 決まった初期値
+  for (let i = 0; i < bytes.length; i++) {
+    h ^= bytes[i];                                       // 1バイトずつ混ぜ合わせる
+    h = Math.imul(h, 0x01000193) >>> 0;                  // 決まった数を掛ける
+  }
+  return bytes.length + '-' + h.toString(16);            // ファイルサイズも付けて区別しやすく
+}
+
+// JPEG写真に記録されている撮影日時（EXIF情報）を読み取る。
+// 読めなかったら null を返す。※ 少し難しい部分なので、無理に理解しなくて大丈夫
+function readExifDate(buffer) {
+  try {
+    const v = new DataView(buffer);
+    if (v.getUint16(0) !== 0xFFD8) return null;          // JPEGファイルでなければ諦める
+    let pos = 2;
+    while (pos + 10 < v.byteLength) {                    // ファイルの中の区切りを順に見ていく
+      const marker = v.getUint16(pos);
+      const size = v.getUint16(pos + 2);
+      if (marker === 0xFFE1 && v.getUint32(pos + 4) === 0x45786966) {  // "Exif" と書かれた区切りを発見
+        return parseExif(v, pos + 10);
+      }
+      if ((marker & 0xFF00) !== 0xFF00) break;           // おかしなデータなら終了
+      pos += 2 + size;                                   // 次の区切りへ
+    }
+  } catch (e) { /* 読めなくても問題なし */ }
+  return null;
+}
+
+// readExifDate の続き。EXIF の中から日時の項目を探す
+function parseExif(v, start) {
+  const little = v.getUint16(start) === 0x4949;          // データの並び方（機種によって違う）
+  const u16 = o => v.getUint16(start + o, little);
+  const u32 = o => v.getUint32(start + o, little);
+  const readTags = offset => {                           // 項目の一覧を読み、{番号: 位置} にまとめる
+    const tags = {};
+    const n = u16(offset);
+    for (let i = 0; i < n; i++) tags[u16(offset + 2 + i * 12)] = offset + 2 + i * 12;
+    return tags;
+  };
+  const readText = entry => {                            // 項目の中身を文字として読む
+    const count = u32(entry + 4);
+    const off = count > 4 ? u32(entry + 8) : entry + 8;
+    let s = '';
+    for (let i = 0; i < count - 1; i++) s += String.fromCharCode(v.getUint8(start + off + i));
+    return s;
+  };
+  const ifd0 = readTags(u32(4));
+  let text = null;
+  if (ifd0[0x8769]) {                                    // 詳細情報の場所が書いてあれば
+    const exif = readTags(u32(ifd0[0x8769] + 8));
+    if (exif[0x9003]) text = readText(exif[0x9003]);     // 0x9003 ＝ 撮影日時
+  }
+  if (!text && ifd0[0x0132]) text = readText(ifd0[0x0132]);  // なければ 0x0132 ＝ 更新日時
+  const m = text && text.match(/^(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2})/);  // "2026:05:03 14:20:11" の形か確認
+  if (!m || m[1] === '0000') return null;
+  return { date: `${m[1]}-${m[2]}-${m[3]}`, time: `${m[4]}:${m[5]}` };
+}
+
+// 画像ファイルを読み込んで <img> にする
+function loadImage(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);               // ファイルを一時的にURLにする
+    const img = new Image();
+    img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('画像を読み込めませんでした')); };
+    img.src = url;
+  });
+}
+
+// 画像を縮小して、文字データ（data URL）に変換する。これで写真をデータとして保存できる
+function resizeImage(img, maxSize, quality) {
+  const scale = Math.min(1, maxSize / Math.max(img.naturalWidth, img.naturalHeight));  // 縮小率（拡大はしない）
+  const w = Math.round(img.naturalWidth * scale);
+  const h = Math.round(img.naturalHeight * scale);
+  const canvas = document.createElement('canvas');       // 絵を描くための見えないキャンバス
+  canvas.width = w;
+  canvas.height = h;
+  canvas.getContext('2d').drawImage(img, 0, 0, w, h);    // 縮小して描く
+  return canvas.toDataURL('image/jpeg', quality);        // JPEG形式の文字データにする
+}
+
+// -------------------------------------------------------------------
+// 7. 絞り込み（検索）
+// -------------------------------------------------------------------
+
+// 絞り込み欄の今の値をまとめて取り出す
+function getFilters() {
+  return {
+    keyword: $('#f-keyword').value.trim(),
+    group: $('#f-group').value,
+    place: $('#f-place').value,
+    season: $('#f-season').value,
+    month: Number($('#f-month').value) || 0,
+    stage: $('#f-stage').value,
+    sex: $('#f-sex').value,
+    sort: $('#f-sort').value,
+  };
+}
+
+// 写真に関する条件（場所・季節・月・成長段階・性別）が1つでも指定されているか
+function hasPhotoFilter(f) {
+  return Boolean(f.place || f.season || f.month || f.stage || f.sex);
+}
+
+// 写真1枚が、写真に関する条件をすべて満たすか
+function photoPassesPhotoFilter(p, f) {
+  const m = obsMonth(p);
+  if (f.place && p.place !== f.place) return false;               // 場所が違う
+  if (f.season && SEASON_OF_MONTH[m] !== f.season) return false;  // 季節が違う
+  if (f.month && m !== f.month) return false;                     // 月が違う
+  if (f.stage && p.stage !== f.stage) return false;               // 成長段階が違う
+  if (f.sex && p.sex !== f.sex) return false;                     // 性別が違う
+  return true;
+}
+
+// キーワードが文章の中に含まれるか（ひらがな/カタカナなどのゆれは無視）
+function keywordHit(text, keyword) {
+  return !keyword || normalize(text).includes(normalize(keyword));
+}
+
+// 種の文字情報をつなげたもの（キーワード検索の対象）
+function speciesText(sp) {
+  return [sp.name, sp.sciName, taxonText(sp), sp.memo].join(' ');
+}
+
+// 種が条件に合うか
+function speciesMatches(sp, f) {
+  if (f.group && sp.group !== f.group) return false;
+  if (!keywordHit(speciesText(sp), f.keyword)) return false;
+  if (hasPhotoFilter(f)) {                                // 写真の条件があれば…
+    return photosOf(sp.id).some(p => photoPassesPhotoFilter(p, f));  // …条件に合う写真が1枚でもある種だけ残す
+  }
+  return true;
+}
+
+// 写真が条件に合うか
+function photoMatches(p, f) {
+  const sp = getSpecies(p.speciesId);
+  const groupOf = sp ? sp.group : p.group;               // 未同定なら記録に入れた分類で判定
+  if (f.group && groupOf !== f.group) return false;
+  const text = (sp ? speciesText(sp) : '未同定 ' + taxonText(p)) + ' ' + p.memo + ' ' + p.place;
+  if (!keywordHit(text, f.keyword)) return false;
+  return photoPassesPhotoFilter(p, f);
+}
+
+// 並べ替え
+function sortSpecies(list, sort) {
+  const byName = (a, b) => a.name.localeCompare(b.name, 'ja');
+  if (sort === 'group') {                                 // 分類群→綱→目→科→属→名前の順
+    const key = s => TAXON_KEYS.map(([k]) => s[k] || '￿').join('|');  // 空欄は最後に
+    return list.sort((a, b) => key(a).localeCompare(key(b), 'ja') || byName(a, b));
+  }
+  if (sort === 'new') return list.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  if (sort === 'date') {                                  // その種の一番新しい撮影日
+    const last = s => photosOf(s.id).map(dateKey).sort().pop() || '';
+    return list.sort((a, b) => last(b).localeCompare(last(a)) || byName(a, b));
+  }
+  return list.sort(byName);                               // 標準は名前順
+}
+
+function sortPhotos(list, sort) {
+  if (sort === 'name') return list.sort((a, b) => photoTitle(a).localeCompare(photoTitle(b), 'ja'));
+  if (sort === 'new') return list.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  return list.sort((a, b) => dateKey(b).localeCompare(dateKey(a)));  // 観察日が新しい順
+}
+
+function resetFilters() {
+  for (const id of ['#f-keyword', '#f-group', '#f-place', '#f-season', '#f-month', '#f-stage', '#f-sex']) {
+    $(id).value = '';
+  }
+  renderLists();
+}
+
+// -------------------------------------------------------------------
+// 8. 画面の表示（描画）
+// -------------------------------------------------------------------
+
+// タブを切り替える
+function showTab(tab) {
+  state.tab = tab;
+  for (const name of ['species', 'photos', 'unid', 'register', 'data']) {
+    $('#page-' + name).hidden = (name !== tab);           // 選んだタブ以外は隠す
+  }
+  document.querySelectorAll('nav button').forEach(b =>
+    b.classList.toggle('active', b.dataset.tab === tab)); // 選んだタブのボタンを強調
+  $('#filters').hidden = !['species', 'photos', 'unid'].includes(tab);  // 絞り込み欄は一覧系タブだけ
+  $('#fab').hidden = !['species', 'photos', 'unid'].includes(tab);      // 「＋ 登録する」ボタンも一覧系タブだけ
+  if (tab === 'data') renderDataPage();
+  else renderLists();
+  window.scrollTo(0, 0);
+}
+
+// 全部描き直す
+function renderAll() {
+  renderFilterOptions();
+  renderDatalists();
+  renderSaveStatus();
+  showTab(state.tab);
+}
+
+// 絞り込み欄の選択肢を、登録データから作る
+function renderFilterOptions() {
+  const keep = id => $(id).value;                         // 今選ばれている値を覚えておく
+  // 分類群の選択肢：種の分類群＋未同定の記録に入れた分類群
+  const groups = state.species.map(s => s.group).concat(state.photos.filter(p => !p.speciesId).map(p => p.group));
+  $('#f-group').innerHTML = optionsHtml(uniqueSorted(groups), keep('#f-group'));
+  $('#f-place').innerHTML = optionsHtml(uniqueSorted(state.photos.map(p => p.place)), keep('#f-place'));
+  $('#f-month').innerHTML = monthOptionsHtml(keep('#f-month'), 'すべて');
+  $('#f-stage').innerHTML = optionsHtml(STAGES, keep('#f-stage'));
+  $('#f-sex').innerHTML = optionsHtml(SEXES, keep('#f-sex'));
+  // 登録画面の選択肢も作る
+  $('#r-stage').innerHTML = optionsHtml(STAGES, keep('#r-stage') || STAGES[0], null);
+  $('#r-sex').innerHTML = optionsHtml(SEXES, keep('#r-sex') || SEXES[0], null);
+  $('#r-month').innerHTML = monthOptionsHtml(keep('#r-month'), '分からない');
+}
+
+// 月（1〜12）の選択肢を作る
+function monthOptionsHtml(selected, firstLabel) {
+  let html = `<option value="">${firstLabel}</option>`;
+  for (let n = 1; n <= 12; n++) {
+    html += `<option value="${n}" ${String(n) === String(selected) ? 'selected' : ''}>${n}月</option>`;
+  }
+  return html;
+}
+
+// 入力候補（datalist）を作る
+function renderDatalists() {
+  const fill = (id, values) => {
+    $(id).innerHTML = uniqueSorted(values).map(v => `<option value="${esc(v)}">`).join('');
+  };
+  fill('#dl-species', state.species.map(s => s.name));
+  for (const [key] of TAXON_KEYS) {                      // 分類の各段階（分類群・綱・目・科・属）の候補
+    fill('#dl-' + key, state.species.map(s => s[key]).concat(state.photos.map(p => p[key])));
+  }
+  fill('#dl-place', state.photos.map(p => p.place));
+}
+
+// ヘッダーに保存状態を表示
+function renderSaveStatus() {
+  const unsaved = state.updatedAt && state.updatedAt > (state.savedAt || '');
+  $('#save-status').textContent = unsaved ? '● ファイル未保存の変更あり' : '';
+}
+
+// 一覧系のタブを描き直す
+function renderLists() {
+  const f = getFilters();
+  // 詳しい条件を指定しているとき、閉じていても分かるように印を出す
+  $('#f-active').textContent = (f.group || hasPhotoFilter(f)) ? '● 条件指定中' : '';
+  if (state.tab === 'species') renderSpeciesPage(f);
+  if (state.tab === 'photos') renderPhotosPage(f);
+  if (state.tab === 'unid') renderUnidPage(f);
+}
+
+// 「種の一覧」タブ
+function renderSpeciesPage(f) {
+  const list = sortSpecies(state.species.filter(sp => speciesMatches(sp, f)), f.sort);
+  let html = `<div class="count">${list.length} 種 / 登録 ${state.species.length} 種</div>`;
+  if (list.length === 0) {
+    html += `<div class="empty">${state.species.length ? '条件に合う種がありません' : 'まだ登録がありません。右下の「＋ 登録する」から始めましょう。<br>以前のデータがある場合は「データ・保存」タブ →「ファイルを選んで読み込む」で引き継げます'}</div>`;
+  } else {
+    html += '<div class="grid">' + list.map(sp => {
+      // 写真の条件で絞り込んでいるときは、条件に合う写真を表紙にする（例：幼虫で絞ったら幼虫の写真）
+      const cover = hasPhotoFilter(f)
+        ? photosOf(sp.id).find(p => p.thumb && photoPassesPhotoFilter(p, f))
+        : coverPhoto(sp.id);
+      const count = photosOf(sp.id).length;               // 記録の数（写真なしの記録も含む）
+      return `
+        <div class="card" onclick="openSpecies('${sp.id}')">
+          ${cover ? `<img src="${cover.thumb}" alt="" loading="lazy">` : '<div class="noimg">写真なし</div>'}
+          <div class="body">
+            <div class="name">${esc(sp.name)}</div>
+            ${sp.sciName ? `<div class="sci">${esc(sp.sciName)}</div>` : ''}
+            <div>${sp.group ? `<span class="tag">${esc(sp.group)}</span>` : ''}<span class="small">記録 ${count} 件</span></div>
+          </div>
+        </div>`;
+    }).join('') + '</div>';
+  }
+  $('#page-species').innerHTML = html;
+}
+
+// 記録1件分のカードのHTMLを作る（記録・写真一覧、未同定、種の詳細で共通）
+function photoCardHtml(p, showName = true) {
+  const taxon = taxonText(p);                            // 未同定の記録に入れた分類
+  return `
+    <div class="card" onclick="openPhoto('${p.id}')">
+      ${p.thumb ? `<img src="${p.thumb}" alt="" loading="lazy">` : '<div class="noimg">写真なし</div>'}
+      <div class="body">
+        ${showName ? `<div class="name">${esc(photoTitle(p))}</div>` : ''}
+        <div>
+          <span class="tag ${p.speciesId ? '' : 'unid'}">${esc(p.stage)}</span>
+          ${p.sex && p.sex !== '不明' ? `<span class="tag">${esc(p.sex)}</span>` : ''}
+        </div>
+        <div class="small">${fmtObs(p)}${p.place ? '・' + esc(p.place) : ''}</div>
+        ${!p.speciesId && taxon ? `<div class="small">分類：${esc(taxon)}</div>` : ''}
+      </div>
+    </div>`;
+}
+
+// 「記録・写真」タブ（例：成長段階＝幼虫 にすると、幼虫の写真だけが並ぶ）
+function renderPhotosPage(f) {
+  const list = sortPhotos(state.photos.filter(p => photoMatches(p, f)), f.sort);
+  let html = `<div class="count">${list.length} 件 / 全 ${state.photos.length} 件
+    <br>ヒント：「成長段階」で「幼虫」や「蛹」を選ぶと、その段階の写真だけを見比べられます</div>`;
+  html += list.length
+    ? '<div class="grid">' + list.map(p => photoCardHtml(p)).join('') + '</div>'
+    : '<div class="empty">条件に合う記録がありません</div>';
+  $('#page-photos').innerHTML = html;
+}
+
+// 「未同定」タブ
+function renderUnidPage(f) {
+  const all = state.photos.filter(p => !p.speciesId);
+  const list = sortPhotos(all.filter(p => photoMatches(p, f)), f.sort);
+  let html = `<div class="count">未同定 ${list.length} 件 / ${all.length} 件
+    <br>記録を開いて「種名」を入力して保存すると、その種に移動します（同定）</div>`;
+  html += list.length
+    ? '<div class="grid">' + list.map(p => photoCardHtml(p)).join('') + '</div>'
+    : '<div class="empty">未同定の記録はありません</div>';
+  $('#page-unid').innerHTML = html;
+}
+
+// -------------------------------------------------------------------
+// 9. 詳細画面（モーダル）
+//    画面の上に重ねて開く窓。重ねて開けるように「積み重ね（stack）」で管理する
+// -------------------------------------------------------------------
+const modalStack = [];                                   // 開いている窓の「中身を作る関数」のリスト
+
+function pushModal(makeHtml) { modalStack.push(makeHtml); drawModal(); }  // 新しい窓を上に重ねる
+function closeModal() { modalStack.pop(); drawModal(); renderLists(); }   // 一番上の窓を閉じる
+function closeAllModals() { modalStack.length = 0; drawModal(); renderLists(); }
+
+// keepScroll が true なら、描き直してもスクロール位置をそのままにする
+function drawModal(keepScroll = false) {
+  flushCompareMemo();                                    // 書きかけの比較メモがあれば、画面を描き直す前に保存
+  const top = modalStack[modalStack.length - 1];         // 一番上の窓
+  $('#modal').hidden = !top;
+  document.body.style.overflow = top ? 'hidden' : '';    // 窓を開いている間は後ろをスクロールさせない
+  if (top) {
+    const y = $('#modal').scrollTop;
+    $('#modal-content').innerHTML = top();
+    $('#modal').scrollTop = keepScroll ? y : 0;
+  }
+}
+
+// 写真を全画面で見る
+function viewImage(photoId) {
+  $('#viewer-img').src = getPhoto(photoId).image;
+  $('#viewer').hidden = false;
+}
+
+// ---- 種の詳細 ----
+function openSpecies(id) { pushModal(() => speciesDetailHtml(id)); }
+
+function speciesDetailHtml(id) {
+  const sp = getSpecies(id);
+  if (!sp) return '<p>この種は削除されました。</p>';
+  const photos = photosOf(id).sort((a, b) => dateKey(a).localeCompare(dateKey(b)));  // 観察日の古い順
+  let html = `
+    <h2 style="margin:0 40px 0 0">${esc(sp.name)}</h2>
+    ${sp.sciName ? `<div class="sci" style="font-style:italic;color:var(--sub)">${esc(sp.sciName)}</div>` : ''}
+    <dl class="info">
+      ${TAXON_KEYS.map(([key, label]) => `<dt>${label}</dt><dd>${esc(sp[key]) || '—'}</dd>`).join('')}
+      <dt>記録</dt><dd>${photos.length} 件（写真 ${photos.filter(p => p.image).length} 枚）</dd>
+      ${sp.memo ? `<dt>メモ</dt><dd style="white-space:pre-wrap">${esc(sp.memo)}</dd>` : ''}
+    </dl>
+    <div class="row">
+      <button class="btn" onclick="addPhotoToSpecies('${id}')">＋ 記録・写真を追加</button>
+      <button class="btn" onclick="openSpeciesEdit('${id}')">種の情報を編集</button>
+    </div>`;
+  html += similarSectionHtml(id);                        // 「類似種との違い」の項目
+  // 成長段階ごとに分けて表示（STAGES の順番で）
+  for (const stage of STAGES) {
+    const list = photos.filter(p => p.stage === stage);
+    if (!list.length) continue;                          // その段階の記録がなければ飛ばす
+    html += `<h3 class="stage-head">${esc(stage)}（${list.length}）</h3>
+      <div class="grid">${list.map(p => photoCardHtml(p, false)).join('')}</div>`;
+  }
+  // STAGES にない段階名の記録（設定を変えた場合など）もまとめて表示
+  const others = photos.filter(p => !STAGES.includes(p.stage));
+  if (others.length) {
+    html += `<h3 class="stage-head">その他</h3><div class="grid">${others.map(p => photoCardHtml(p, false)).join('')}</div>`;
+  }
+  return html;
+}
+
+// 種の詳細から「記録・写真を追加」→ 登録画面を開いて、種名を入れておく
+function addPhotoToSpecies(id) {
+  const sp = getSpecies(id);
+  closeAllModals();
+  openRegister();
+  $('#r-name').value = sp.name;
+  onRegisterNameInput();
+}
+
+// 分類（分類群・綱・目・科・属）の入力欄をまとめて作る。prefix は入力欄のIDの頭につける文字
+function taxonInputsHtml(prefix, obj) {
+  return TAXON_KEYS.map(([key, label]) =>
+    `<label class="f">${label}<input id="${prefix}-${key}" list="dl-${key}" value="${esc(obj[key])}"></label>`
+  ).join('');
+}
+
+// 上の入力欄から分類を読み取り、{ group:…, cls:…, … } の形で返す
+function readTaxon(prefix) {
+  const taxon = {};
+  for (const [key] of TAXON_KEYS) taxon[key] = $(`#${prefix}-${key}`).value.trim();
+  return taxon;
+}
+
+// ---- 種の情報の編集 ----
+function openSpeciesEdit(id) { pushModal(() => speciesEditHtml(id)); }
+
+function speciesEditHtml(id) {
+  const sp = getSpecies(id);
+  return `
+    <h2 style="margin:0 40px 10px 0">種の情報を編集</h2>
+    <div class="form">
+      <label class="f wide">種名（和名）<input id="se-name" value="${esc(sp.name)}" oninput="onSpeciesEditInput('${id}')"></label>
+      <div class="wide" id="se-check"></div>
+      <label class="f wide">学名<input id="se-sci" value="${esc(sp.sciName)}"></label>
+      ${taxonInputsHtml('se', sp)}
+      <label class="f wide">メモ<textarea id="se-memo">${esc(sp.memo)}</textarea></label>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button class="btn primary" onclick="saveSpeciesEdit('${id}')">保存</button>
+      <button class="btn" onclick="closeModal()">キャンセル</button>
+      <button class="btn danger" onclick="deleteSpecies('${id}')" style="margin-left:auto">この種を削除</button>
+    </div>`;
+}
+
+// 編集中に名前を変えたら、他の種と被っていないかチェック
+function onSpeciesEditInput(id) {
+  const { exact, similar } = checkName($('#se-name').value, id);
+  let html = '';
+  if (exact) html = `<div class="msg warn">「${esc(exact.name)}」はすでに登録されています。保存すると、この種の記録を「${esc(exact.name)}」にまとめる（統合する）か確認します。</div>`;
+  else if (similar.length) html = `<div class="msg warn">似た名前の種：${similar.map(s => esc(s.name)).join('、')}</div>`;
+  $('#se-check').innerHTML = html;
+}
+
+async function saveSpeciesEdit(id) {
+  const sp = getSpecies(id);
+  const name = $('#se-name').value.trim();
+  if (!name) { alert('種名を入力してください'); return; }
+  const { exact } = checkName(name, id);
+  if (exact) {
+    // 同じ名前の種がすでにある → 登録被りなので、統合するか確認
+    if (!confirm(`「${exact.name}」はすでに登録されています。\nこの種の記録 ${photosOf(id).length} 件をすべて「${exact.name}」に移し、この種を削除しますか？`)) return;
+    for (const p of photosOf(id)) await savePhoto({ ...p, speciesId: exact.id });  // 記録を移す
+    for (const c of comparisonsOf(id)) {                 // 類似種の比較も移す
+      const other = c.a === id ? c.b : c.a;
+      if (other === exact.id || findComparison(exact.id, other)) await removeComparison(c.id);  // 自分同士・重複になるなら消す
+      else await saveComparison({ ...c, a: c.a === id ? exact.id : c.a, b: c.b === id ? exact.id : c.b });
+    }
+    state.species = state.species.filter(s => s.id !== id);
+    await idbDelete('species', id);
+    await touch();
+    modalStack.length = 0;
+    renderAll();
+    openSpecies(exact.id);
+    toast('統合しました');
+    return;
+  }
+  await saveSpecies({
+    ...sp,                                               // 元の情報をコピーして…
+    name,                                                // …変更した項目だけ上書き
+    sciName: $('#se-sci').value.trim(),
+    ...readTaxon('se'),                                  // 分類（分類群・綱・目・科・属）
+    memo: $('#se-memo').value.trim(),
+  });
+  renderFilterOptions();
+  renderDatalists();
+  closeModal();
+  toast('保存しました');
+}
+
+async function deleteSpecies(id) {
+  const sp = getSpecies(id);
+  const photos = photosOf(id);
+  if (!confirm(`「${sp.name}」を削除しますか？\n記録 ${photos.length} 件は削除されず「未同定」に移ります（分類は引き継ぎます）。\n類似種との比較 ${comparisonsOf(id).length} 件は削除されます。`)) return;
+  const taxon = {};
+  for (const [key] of TAXON_KEYS) taxon[key] = sp[key];  // 種の分類を記録に写す
+  for (const p of photos) await savePhoto({ ...p, speciesId: null, ...taxon });
+  for (const c of comparisonsOf(id)) await removeComparison(c.id);  // この種が入った比較も消す
+  state.species = state.species.filter(s => s.id !== id);
+  await idbDelete('species', id);
+  await touch();
+  closeAllModals();
+  renderAll();
+  toast('削除しました（記録は未同定へ）');
+}
+
+// ---- 記録（写真）の詳細・編集（未同定の記録の同定もここで行う） ----
+function openPhoto(id) { pushModal(() => photoDetailHtml(id)); }
+
+function photoDetailHtml(id) {
+  const p = getPhoto(id);
+  if (!p) return '<p>この記録は削除されました。</p>';
+  const sp = getSpecies(p.speciesId);
+  return `
+    <h2 style="margin:0 40px 8px 0">${esc(photoTitle(p))}</h2>
+    ${p.image
+      ? `<img class="big-photo" src="${p.image}" alt="" onclick="viewImage('${id}')">
+         <p class="small">写真をタップすると大きく表示します</p>`
+      : `<div class="panel small">写真なしの記録です。
+           <label class="f" style="margin-top:6px">写真を付ける
+             <input type="file" accept="image/*" onchange="attachPhoto('${id}', this.files[0])">
+           </label></div>`}
+    ${sp ? `<button class="btn" onclick="openSpecies('${sp.id}')">この種の記録をすべて見る</button>` : ''}
+    <div class="form" style="margin-top:12px">
+      <label class="f wide">種名（空欄にすると未同定）
+        <input id="pe-name" list="dl-species" value="${esc(sp ? sp.name : '')}" placeholder="名前が分かったら入力" oninput="onPhotoNameInput()">
+      </label>
+      <div class="wide" id="pe-check"></div>
+      <div class="wide form" id="pe-taxon-wrap" ${sp ? 'hidden' : ''}>
+        <div class="wide small">分類（分かるところまで）</div>
+        ${taxonInputsHtml('pe', p)}
+      </div>
+      <label class="f">成長段階<select id="pe-stage">${optionsHtml(STAGES.includes(p.stage) ? STAGES : [...STAGES, p.stage], p.stage, null)}</select></label>
+      <label class="f">性別<select id="pe-sex">${optionsHtml(SEXES, p.sex, null)}</select></label>
+      <label class="f">観察日<input id="pe-date" type="date" value="${esc(p.date)}"></label>
+      <label class="f">時刻<input id="pe-time" type="time" value="${esc(p.time)}"></label>
+      <label class="f">年（日付不明のとき）<input id="pe-year" type="number" value="${esc(p.year)}"></label>
+      <label class="f">月（日付不明のとき）<select id="pe-month">${monthOptionsHtml(p.month, '分からない')}</select></label>
+      <label class="f wide">観察場所<input id="pe-place" list="dl-place" value="${esc(p.place)}"></label>
+      <label class="f wide">メモ<textarea id="pe-memo">${esc(p.memo)}</textarea></label>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button class="btn primary" onclick="savePhotoEdit('${id}')">保存</button>
+      <button class="btn" onclick="closeModal()">閉じる</button>
+      <button class="btn danger" onclick="deletePhoto('${id}')" style="margin-left:auto">この記録を削除</button>
+    </div>`;
+}
+
+// 記録の種名を入力中に、登録済みかどうかを表示
+function onPhotoNameInput() {
+  const name = $('#pe-name').value.trim();
+  $('#pe-taxon-wrap').hidden = Boolean(name) && Boolean(checkName(name).exact);  // 登録済みの種なら分類欄は不要
+  $('#pe-check').innerHTML = name ? nameCheckHtml(name) : '<div class="msg">空欄のまま保存すると「未同定」になります</div>';
+}
+
+// 名前チェックの結果メッセージ（登録画面と記録の編集で共通）
+function nameCheckHtml(name) {
+  const { exact, similar } = checkName(name);
+  if (exact) {
+    return `<div class="msg ok">✔ 登録済みの種「${esc(exact.name)}」${exact.sciName ? `（${esc(exact.sciName)}）` : ''}に記録を追加します（現在 ${photosOf(exact.id).length} 件）</div>`;
+  }
+  let html = `<div class="msg">「${esc(name)}」は新しい種として登録されます</div>`;
+  if (similar.length) {
+    html += `<div class="msg warn" style="margin-top:4px">⚠ 似た名前の種があります。同じ種ではありませんか？<br>` +
+      similar.map(s => `<button class="btn" style="margin:4px 4px 0 0;padding:2px 8px" onclick="useSpeciesName('${s.id}')">${esc(s.name)}</button>`).join('') +
+      `</div>`;
+  }
+  return html;
+}
+
+// 「似た名前」のボタンを押したら、その名前を入力欄に入れる
+function useSpeciesName(id) {
+  const name = getSpecies(id).name;
+  if (!$('#modal').hidden && $('#pe-name')) { $('#pe-name').value = name; onPhotoNameInput(); }
+  else { $('#r-name').value = name; onRegisterNameInput(); }
+}
+
+async function savePhotoEdit(id) {
+  const p = getPhoto(id);
+  const name = $('#pe-name').value.trim();
+  const taxon = readTaxon('pe');                         // 入力された分類
+  let speciesId = null;
+  if (name) {
+    const { exact } = checkName(name);
+    if (exact) {
+      speciesId = exact.id;                              // 既存の種に紐づける
+    } else {
+      if (!confirm(`「${name}」は未登録の種です。新しい種として登録しますか？\n（入力した分類はその種の分類になります）`)) return;
+      const sp = { id: newId(), name, sciName: '', ...taxon, memo: '', createdAt: nowIso() };
+      await saveSpecies(sp);
+      speciesId = sp.id;
+    }
+  }
+  const date = $('#pe-date').value;
+  const empty = {};
+  for (const [key] of TAXON_KEYS) empty[key] = '';
+  await savePhoto({
+    ...p,
+    speciesId,
+    ...(speciesId ? empty : taxon),                      // 種が決まったら分類は種の方に持たせる
+    stage: $('#pe-stage').value,
+    sex: $('#pe-sex').value,
+    date,
+    time: $('#pe-time').value,
+    year: date ? '' : $('#pe-year').value,               // 日付があれば年・月は不要
+    month: date ? '' : $('#pe-month').value,
+    place: $('#pe-place').value.trim(),
+    memo: $('#pe-memo').value.trim(),
+  });
+  renderFilterOptions();
+  renderDatalists();
+  closeModal();
+  toast(!p.speciesId && speciesId ? `「${name}」として同定しました` : '保存しました');
+}
+
+// 写真なしの記録に、あとから写真を付ける
+async function attachPhoto(id, file) {
+  if (!file) return;
+  const buffer = await file.arrayBuffer();
+  const hash = hashBytes(buffer);
+  const already = state.photos.find(x => x.hash === hash);
+  if (already && !confirm(`この写真は登録済みです（${photoTitle(already)}）。それでも付けますか？`)) return;
+  const img = await loadImage(file);
+  await savePhoto({
+    ...getPhoto(id),
+    image: resizeImage(img, CONFIG.IMAGE_MAX, CONFIG.IMAGE_QUALITY),
+    thumb: resizeImage(img, CONFIG.THUMB_MAX, CONFIG.THUMB_QUALITY),
+    hash,
+  });
+  drawModal();                                           // 詳細画面を描き直す
+  toast('写真を付けました');
+}
+
+async function deletePhoto(id) {
+  if (!confirm('この記録を削除しますか？（元に戻せません）')) return;
+  state.photos = state.photos.filter(p => p.id !== id);
+  await idbDelete('photos', id);
+  await touch();
+  renderFilterOptions();
+  closeModal();
+  toast('記録を削除しました');
+}
+
+// -------------------------------------------------------------------
+// 9.4 類似種との違い（2つの種の写真を並べて、違いをメモする）
+// -------------------------------------------------------------------
+
+// 比較のIDから比較のデータを探す
+function getComparison(id) { return state.comparisons.find(c => c.id === id); }
+
+// ある種が入っている比較をすべて集める
+function comparisonsOf(speciesId) {
+  return state.comparisons.filter(c => c.a === speciesId || c.b === speciesId);
+}
+
+// 2つの種の比較を探す（順番は関係なし）
+function findComparison(id1, id2) {
+  return state.comparisons.find(c => (c.a === id1 && c.b === id2) || (c.a === id2 && c.b === id1));
+}
+
+// 比較の相手の種IDを返す（ナミアゲハのページなら、相手はキアゲハ）
+function otherSide(c, speciesId) { return c.a === speciesId ? c.b : c.a; }
+
+// 比較を保存（新規でも更新でもOK）
+async function saveComparison(c) {
+  c = { ...c, updatedAt: nowIso() };
+  const i = state.comparisons.findIndex(x => x.id === c.id);
+  if (i >= 0) state.comparisons[i] = c; else state.comparisons.push(c);
+  await idbPut('comparisons', c);
+  await touch();
+}
+
+// 比較を消す
+async function removeComparison(id) {
+  state.comparisons = state.comparisons.filter(c => c.id !== id);
+  await idbDelete('comparisons', id);
+  await touch();
+}
+
+// 比較の中で、その種の側に表示する写真を決める
+// （選んだ写真があればそれ。消されていたら、その種の代表写真）
+function comparePhoto(c, speciesId) {
+  const chosen = getPhoto(speciesId === c.a ? c.photoA : c.photoB);
+  if (chosen && chosen.speciesId === speciesId && chosen.thumb) return chosen;
+  return coverPhoto(speciesId);
+}
+
+// 小さい写真（なければ「写真なし」の箱）
+function miniThumbHtml(p) {
+  return p ? `<img src="${p.thumb}" alt="">` : '<div class="noimg">写真なし</div>';
+}
+
+// ---- 種のページの「類似種との違い」の項目 ----
+function similarSectionHtml(speciesId) {
+  const comps = comparisonsOf(speciesId);
+  let html = `<h3 class="stage-head">類似種との違い（${comps.length}）</h3>`;
+  html += comps.map(c => {
+    const otherId = otherSide(c, speciesId);
+    const other = getSpecies(otherId);
+    const memo = c.memo.trim();
+    return `
+      <div class="cmp-row" onclick="openCompare('${c.id}', '${speciesId}')">
+        <div class="cmp-thumbs">${miniThumbHtml(comparePhoto(c, speciesId))}${miniThumbHtml(comparePhoto(c, otherId))}</div>
+        <div style="min-width:0">
+          <div class="name">${esc(other ? other.name : '（削除された種）')} との違い</div>
+          <div class="small cmp-excerpt">${memo ? esc(memo) : 'まだメモがありません。タップして写真を見比べ、違いを書きましょう'}</div>
+        </div>
+      </div>`;
+  }).join('');
+  html += `<button class="btn" onclick="openAddSimilar('${speciesId}')">＋ 類似種を追加</button>`;
+  return html;
+}
+
+// ---- 類似種を追加する画面 ----
+function openAddSimilar(speciesId) { pushModal(() => addSimilarHtml(speciesId)); }
+
+// 2つの種の分類がどれだけ近いか（同じ属なら5 … 同じ分類群なら1、共通点なしなら0）
+function closeness(s1, s2) {
+  for (let i = TAXON_KEYS.length - 1; i >= 0; i--) {     // 細かい段階（属）から順に調べる
+    const key = TAXON_KEYS[i][0];
+    if (s1[key] && s1[key] === s2[key]) return i + 1;
+  }
+  return 0;
+}
+
+function addSimilarHtml(speciesId) {
+  const sp = getSpecies(speciesId);
+  const already = new Set(comparisonsOf(speciesId).map(c => otherSide(c, speciesId)));  // すでに比較している種
+  // 分類が近い種を候補として出す（近い順、最大12件）
+  const candidates = state.species
+    .filter(s => s.id !== speciesId && !already.has(s.id))
+    .map(s => ({ s, lv: closeness(sp, s) }))
+    .filter(x => x.lv > 0)
+    .sort((a, b) => b.lv - a.lv || a.s.name.localeCompare(b.s.name, 'ja'))
+    .slice(0, 12);
+  return `
+    <h2 style="margin:0 40px 10px 0">「${esc(sp.name)}」の類似種を追加</h2>
+    <label class="f">類似種の名前
+      <input id="sim-name" list="dl-species" placeholder="例：キアゲハ" oninput="onSimilarNameInput('${speciesId}')"
+             onkeydown="if (event.key === 'Enter') addSimilar('${speciesId}')">
+    </label>
+    <div id="sim-check" style="margin-top:6px"></div>
+    <div class="row" style="margin-top:10px">
+      <button class="btn primary" onclick="addSimilar('${speciesId}')">追加して見比べる</button>
+      <button class="btn" onclick="closeModal()">キャンセル</button>
+    </div>
+    ${candidates.length ? `
+      <p class="small" style="margin:14px 0 4px">分類が近い登録済みの種（タップで追加）：</p>
+      <div class="row">${candidates.map(x => `
+        <button class="btn" style="padding:4px 10px" onclick="addSimilarById('${speciesId}', '${x.s.id}')">
+          ${esc(x.s.name)} <span class="small">同じ${TAXON_KEYS[x.lv - 1][1]}</span>
+        </button>`).join('')}
+      </div>` : ''}`;
+}
+
+// 名前を入力中に、登録済みかどうかを表示
+function onSimilarNameInput(speciesId) {
+  const name = $('#sim-name').value.trim();
+  const { exact } = checkName(name);
+  let html = '';
+  if (!name) html = '';
+  else if (exact && exact.id === speciesId) html = '<div class="msg warn">同じ種は選べません</div>';
+  else if (exact && findComparison(speciesId, exact.id)) html = `<div class="msg">「${esc(exact.name)}」とはすでに比較しています（開きます）</div>`;
+  else if (exact) html = `<div class="msg ok">✔ 登録済みの「${esc(exact.name)}」と比較します</div>`;
+  else html = `<div class="msg">「${esc(name)}」は未登録です。追加すると、写真なしの種として登録されます（写真は後から追加できます）</div>`;
+  $('#sim-check').innerHTML = html;
+}
+
+// 名前で類似種を追加
+async function addSimilar(speciesId) {
+  const name = $('#sim-name').value.trim();
+  if (!name) { alert('類似種の名前を入力してください'); return; }
+  let other = checkName(name).exact;
+  if (!other) {
+    // 未登録の種 → 名前だけの種として登録する（登録被りチェックは checkName で済んでいる）
+    if (!confirm(`「${name}」は未登録です。種として登録して、比較に追加しますか？`)) return;
+    const sp = getSpecies(speciesId);
+    other = { id: newId(), name, sciName: '', group: sp.group, cls: '', order: '', family: '', genus: '', memo: '', createdAt: nowIso() };
+    await saveSpecies(other);                            // 分類群（大まかなグループ）だけは同じにしておく
+    renderFilterOptions();
+    renderDatalists();
+  }
+  await addSimilarById(speciesId, other.id);
+}
+
+// 種IDで類似種を追加し、そのまま比較画面を開く
+async function addSimilarById(speciesId, otherId) {
+  if (speciesId === otherId) { alert('同じ種は選べません'); return; }
+  let c = findComparison(speciesId, otherId);
+  if (!c) {                                              // まだ比較していなければ新しく作る
+    c = { id: newId(), a: speciesId, b: otherId, memo: '', photoA: '', photoB: '', createdAt: nowIso() };
+    await saveComparison(c);
+  }
+  modalStack.pop();                                      // 「追加する画面」を閉じて…
+  openCompare(c.id, speciesId);                          // …比較画面を開く
+}
+
+// ---- 比較画面（写真を左右に並べて、違いをメモする） ----
+// leftId ＝ 左側に出す種（開いた種のページの種が左に来るようにする）
+function openCompare(cid, leftId) { pushModal(() => compareHtml(cid, leftId)); }
+
+function compareHtml(cid, leftId) {
+  const c = getComparison(cid);
+  if (!c) return '<p>この比較は削除されました。</p>';
+  const rightId = otherSide(c, leftId);
+  const left = getSpecies(leftId), right = getSpecies(rightId);
+  if (!left || !right) return '<p>種が削除されたため、この比較は表示できません。</p>';
+
+  // 片側（1つの種）の表示を作る
+  const side = sp => {
+    const cur = comparePhoto(c, sp.id);                  // 今表示している写真
+    const photos = photosOf(sp.id).filter(p => p.thumb); // 写真のある記録だけ
+    return `
+      <div class="cmp-side">
+        <div class="cmp-name" onclick="openSpecies('${sp.id}')">${esc(sp.name)} ›</div>
+        ${cur
+          ? `<img class="cmp-big" src="${cur.image}" alt="" onclick="viewImage('${cur.id}')">
+             <div class="small">${esc(cur.stage)}${cur.sex && cur.sex !== '不明' ? '・' + esc(cur.sex) : ''}・${fmtObs(cur)}</div>`
+          : `<div class="cmp-big noimg">写真なし</div>`}
+        ${photos.length > 1 ? `
+          <div class="cmp-strip">${photos.map(p => `
+            <img src="${p.thumb}" alt="" title="${esc(p.stage)}" class="${cur && p.id === cur.id ? 'sel' : ''}"
+                 onclick="pickComparePhoto('${cid}', '${sp.id}', '${p.id}')">`).join('')}
+          </div>` : ''}
+      </div>`;
+  };
+
+  // 「段階をそろえる」の選択肢：どちらかに写真がある成長段階
+  const stages = STAGES.filter(st =>
+    [leftId, rightId].some(id => photosOf(id).some(p => p.thumb && p.stage === st)));
+
+  return `
+    <h2 style="margin:0 40px 6px 0">${esc(left.name)} と ${esc(right.name)} の違い</h2>
+    <p class="small" style="margin:0 0 6px">下の小さい写真をタップすると表示する写真を変えられます。大きい写真をタップすると拡大します。</p>
+    ${stages.length ? `
+      <label class="row small">成長段階をそろえる：
+        <select style="width:auto" onchange="alignCompareStage('${cid}', this.value)">
+          <option value="">選ぶ</option>${stages.map(st => `<option>${esc(st)}</option>`).join('')}
+        </select>
+      </label>` : ''}
+    <div class="cmp-grid">${side(left)}${side(right)}</div>
+    <label class="f">違い・見分け方のメモ（自動で保存されます）
+      <textarea id="cmp-memo" data-cid="${cid}" rows="7"
+        placeholder="例：前翅の付け根が、${esc(left.name)}は黒い縞模様、${esc(right.name)}はべったり黒い"
+        oninput="onCompareMemoInput()" onchange="flushCompareMemo()">${esc(c.memo)}</textarea>
+    </label>
+    <div class="small" id="cmp-saved" style="min-height:1.5em"></div>
+    <div class="row" style="margin-top:6px">
+      <button class="btn" onclick="closeModal()">閉じる</button>
+      <button class="btn danger" style="margin-left:auto" onclick="deleteComparison('${cid}')">この比較を削除</button>
+    </div>`;
+}
+
+// メモの自動保存：入力が0.6秒止まったら保存する（1文字ごとに保存すると重いため）
+let memoTimer = null;
+function onCompareMemoInput() {
+  $('#cmp-saved').textContent = '入力中…';
+  clearTimeout(memoTimer);
+  memoTimer = setTimeout(flushCompareMemo, 600);
+}
+
+// 書きかけのメモを今すぐ保存する（画面を閉じる・描き直すときにも呼ばれる）
+function flushCompareMemo() {
+  clearTimeout(memoTimer);
+  memoTimer = null;
+  const el = $('#cmp-memo');
+  if (!el) return;                                       // 比較画面を開いていなければ何もしない
+  const c = getComparison(el.dataset.cid);
+  if (!c || c.memo === el.value) return;                 // 変わっていなければ保存しない
+  saveComparison({ ...c, memo: el.value });
+  const saved = $('#cmp-saved');
+  if (saved) saved.textContent = '✔ 保存しました';
+}
+
+// 比較に表示する写真を選ぶ
+async function pickComparePhoto(cid, speciesId, photoId) {
+  flushCompareMemo();
+  const c = getComparison(cid);
+  await saveComparison({ ...c, [speciesId === c.a ? 'photoA' : 'photoB']: photoId });  // a側かb側か
+  drawModal(true);                                       // スクロール位置はそのままで描き直す
+}
+
+// 両方の種で、同じ成長段階の写真を表示する（例：幼虫どうしを並べる）
+async function alignCompareStage(cid, stage) {
+  if (!stage) return;
+  flushCompareMemo();
+  const c = { ...getComparison(cid) };
+  const missing = [];
+  for (const [id, key] of [[c.a, 'photoA'], [c.b, 'photoB']]) {
+    const p = photosOf(id).find(x => x.thumb && x.stage === stage);
+    if (p) c[key] = p.id;
+    else missing.push(getSpecies(id).name);              // その段階の写真がない種
+  }
+  await saveComparison(c);
+  drawModal(true);
+  if (missing.length) toast(`${missing.join('・')}には「${stage}」の写真がありません`);
+}
+
+async function deleteComparison(cid) {
+  if (!confirm('この比較（メモも含む）を削除しますか？\n種や写真は削除されません。')) return;
+  memoTimer = null;
+  const el = $('#cmp-memo');
+  if (el) el.removeAttribute('id');                      // 閉じるときに保存されないようにする
+  await removeComparison(cid);
+  closeModal();
+  toast('比較を削除しました');
+}
+
+// -------------------------------------------------------------------
+// 9.5 検索窓（画面上部）
+// -------------------------------------------------------------------
+let searchHits = [];   // 今の検索結果（種のリスト）
+let searchSel = -1;    // 矢印キーで選んでいる結果の番号（-1 ＝ 何も選んでいない）
+
+// 名前で種を探す。和名・学名のどこかに入力した文字が含まれていればヒット
+// （ひらがな/カタカナ、全角/半角、大文字/小文字の違いは無視）
+// 並び順：完全に一致 → 前方一致（〜で始まる）→ 途中に含む
+function searchSpecies(query) {
+  const q = normalize(query);
+  if (!q) return [];
+  const score = sp => {                                  // 一致の度合いを点数にする（小さいほど上に出る）
+    const names = [normalize(sp.name), normalize(sp.sciName)];
+    if (names.includes(q)) return 0;                     // 完全一致
+    if (names.some(n => n.startsWith(q))) return 1;      // 前方一致
+    if (names.some(n => n.includes(q))) return 2;        // 途中に含む
+    return -1;                                           // 一致しない
+  };
+  return state.species
+    .map(sp => ({ sp, s: score(sp) }))                   // 種ごとに点数をつけて…
+    .filter(x => x.s >= 0)                               // …一致しないものを除き…
+    .sort((a, b) => a.s - b.s || a.sp.name.localeCompare(b.sp.name, 'ja'))  // …点数順→名前順に並べる
+    .map(x => x.sp);
+}
+
+// 検索窓に文字を入力するたびに、結果を表示する
+function onSearchInput() {
+  const query = $('#q').value.trim();
+  const box = $('#q-results');
+  searchSel = -1;
+  if (!query) { box.hidden = true; return; }             // 空なら結果を閉じる
+  searchHits = searchSpecies(query);
+  if (searchHits.length === 0) {
+    box.innerHTML = `
+      <div class="q-msg">「${esc(query)}」に一致する生物は登録されていません。
+        <div style="margin-top:8px"><button class="btn" onclick="registerFromSearch()">＋「${esc(query)}」を登録する</button></div>
+      </div>`;
+  } else {
+    box.innerHTML = searchHits.slice(0, 30).map((sp, i) => {   // 多すぎると重いので最大30件
+      const cover = coverPhoto(sp.id);
+      const count = photosOf(sp.id).length;
+      return `
+        <div class="q-item" data-i="${i}" onclick="openSearchHit(${i})">
+          ${cover ? `<img src="${cover.thumb}" alt="">` : '<div class="q-noimg">写真なし</div>'}
+          <div>
+            <div class="name" style="font-weight:bold">${esc(sp.name)}</div>
+            ${sp.sciName ? `<div class="small" style="font-style:italic">${esc(sp.sciName)}</div>` : ''}
+            <div class="small">${esc(taxonText(sp)) || '分類未入力'}・記録 ${count} 件</div>
+          </div>
+        </div>`;
+    }).join('') + (searchHits.length > 30 ? `<div class="q-msg small">ほか ${searchHits.length - 30} 件（「検索」ボタンで一覧表示）</div>` : '');
+  }
+  box.hidden = false;
+}
+
+// 検索結果の i 番目をタップしたら、その種の詳細を開く
+function openSearchHit(i) {
+  const sp = searchHits[i];
+  closeSearch();
+  modalStack.length = 0;                                 // 開いている詳細画面があれば閉じてから
+  openSpecies(sp.id);
+}
+
+// 「検索」ボタン または Enterキー
+function runSearch() {
+  const query = $('#q').value.trim();
+  if (!query) return;
+  const hits = searchSpecies(query);
+  const exact = checkName(query).exact;                  // 名前が完全に一致する種
+  if (exact || hits.length === 1) {                      // 1種に決まるなら、その詳細を開く
+    closeSearch();
+    modalStack.length = 0;
+    openSpecies((exact || hits[0]).id);
+  } else if (hits.length > 1) {                          // 複数あれば「種の一覧」をその名前で絞り込んで表示
+    closeSearch();
+    modalStack.length = 0;
+    drawModal();
+    $('#f-keyword').value = query;
+    showTab('species');
+  } else {
+    onSearchInput();                                     // 見つからなければ「登録しますか？」を表示
+  }
+}
+
+// キーボード操作：↓↑で結果を選ぶ、Enterで決定、Escで閉じる
+function onSearchKey(e) {
+  const items = document.querySelectorAll('#q-results .q-item');
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    if (!items.length) return;
+    e.preventDefault();                                  // カーソルが文字の端に飛ぶのを防ぐ
+    searchSel = (searchSel + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+    items.forEach((el, i) => el.classList.toggle('sel', i === searchSel));
+    items[searchSel].scrollIntoView({ block: 'nearest' });
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    if (searchSel >= 0) openSearchHit(searchSel); else runSearch();
+  } else if (e.key === 'Escape') {
+    closeSearch();
+  }
+}
+
+// 検索結果を閉じる（入力した文字は残す）
+function closeSearch() {
+  $('#q-results').hidden = true;
+  $('#q').blur();                                        // スマホのキーボードを閉じる
+}
+
+// 見つからなかった名前で、そのまま登録画面を開く
+function registerFromSearch() {
+  const name = $('#q').value.trim();
+  closeSearch();
+  modalStack.length = 0;
+  drawModal();
+  openRegister();
+  $('#r-name').value = name;
+  onRegisterNameInput();
+}
+
+// 検索窓の外をタップしたら、結果を閉じる
+document.addEventListener('click', e => {
+  if (!e.target.closest('#searchbar')) $('#q-results').hidden = true;
+});
+
+// -------------------------------------------------------------------
+// 10. 登録画面
+// -------------------------------------------------------------------
+
+// 「＋ 登録する」ボタンを押したとき：登録画面を開く
+function openRegister() {
+  if (state.tab !== 'register') state.prevTab = state.tab;  // 「やめる」で戻れるように、今のタブを覚えておく
+  showTab('register');
+  onRegisterNameInput();
+}
+
+// 登録画面に何か入力されているか
+function hasRegisterInput() {
+  const ids = ['#r-name', '#r-sci', '#r-place', '#r-date', '#r-time', '#r-year', '#r-month', '#r-memo']
+    .concat(TAXON_KEYS.map(([key]) => '#r-' + key));
+  return pending.length > 0 || ids.some(id => $(id).value.trim() !== '');
+}
+
+// 「やめる」ボタン：入力を消して、元のタブに戻る
+function cancelRegister() {
+  if (hasRegisterInput() && !confirm('入力した内容を消して、登録をやめますか？')) return;
+  resetRegisterForm();
+  const back = state.prevTab && state.prevTab !== 'register' ? state.prevTab : 'species';
+  showTab(back);
+}
+
+// 写真が選ばれたとき：指紋（ハッシュ）を計算して二重登録をチェックし、プレビューを出す
+async function onFilesSelected(files) {
+  $('#r-progress').textContent = '写真を確認中…';
+  for (const file of files) {
+    const buffer = await file.arrayBuffer();             // ファイルの中身を読む
+    const hash = hashBytes(buffer);
+    const already = state.photos.find(p => p.hash === hash);        // 登録済みの写真と同じ？
+    const dupInList = pending.some(x => x.hash === hash);           // 今回選んだ中で同じ？
+    if (dupInList) continue;                             // 同じファイルを2回選んだだけなら無視
+    pending.push({
+      id: newId(),
+      file,
+      hash,
+      exif: readExifDate(buffer),                        // 撮影日時（読めなければ null）
+      preview: URL.createObjectURL(file),                // プレビュー表示用の一時URL
+      stage: $('#r-stage').value,                        // 最初は「様子」欄で選んだ成長段階にしておく
+      sex: $('#r-sex').value,
+      already,                                           // 登録済みならその写真のデータ
+      skip: Boolean(already),                            // 登録済みなら最初から「登録しない」にしておく
+    });
+  }
+  $('#r-files').value = '';                              // 同じファイルをもう一度選べるようにリセット
+  $('#r-progress').textContent = '';
+  // 観察日の欄が空なら、1枚目の撮影日を入れておく
+  const first = pending.find(x => x.exif);
+  if (first && !$('#r-date').value) { $('#r-date').value = first.exif.date; $('#r-time').value = first.exif.time; }
+  renderPending();
+}
+
+// 選んだ写真のプレビューを描く
+function renderPending() {
+  $('#r-pending').innerHTML = pending.map((x, i) => `
+    <div class="pending-item" style="${x.skip ? 'opacity:.5' : ''}">
+      <img src="${x.preview}" alt="">
+      <div class="opts">
+        <div class="wide small">${x.exif ? '撮影：' + fmtDate(x.exif.date, x.exif.time) : '撮影日時の記録なし（「観察時期」の欄を使います）'}</div>
+        ${x.already ? `<div class="wide msg warn">⚠ この写真は登録済みです（${esc(photoTitle(x.already))}）</div>` : ''}
+        <label class="f">成長段階<select onchange="pending[${i}].stage=this.value">${optionsHtml(STAGES, x.stage, null)}</select></label>
+        <label class="f">性別<select onchange="pending[${i}].sex=this.value">${optionsHtml(SEXES, x.sex, null)}</select></label>
+        <div class="wide row">
+          <label class="row small"><input type="checkbox" style="width:auto" ${x.skip ? 'checked' : ''}
+            onchange="pending[${i}].skip=this.checked; renderPending()"> 登録しない</label>
+          <button class="btn" style="padding:2px 8px;margin-left:auto" onclick="removePending(${i})">外す</button>
+        </div>
+      </div>
+    </div>`).join('');
+}
+
+function removePending(i) {
+  URL.revokeObjectURL(pending[i].preview);               // 一時URLを片付ける
+  pending.splice(i, 1);                                  // リストから外す
+  renderPending();
+}
+
+// 和名・学名を入力するたびに、登録被りチェックを表示する
+function onRegisterNameInput() {
+  const name = $('#r-name').value.trim();
+  const sci = $('#r-sci').value.trim();
+  const byName = name ? checkName(name).exact : null;   // 和名（または学名）が一致する種
+  const bySci = sci ? checkName(sci).exact : null;      // 学名が一致する種
+  const known = byName || bySci;                         // 登録済みの種（なければ null）
+  $('#r-taxon-panel').hidden = Boolean(known);           // 登録済みの種なら、分類の入力は不要なので隠す
+  let html = '';
+  if (!name && !sci) {
+    html = '<div class="msg">名前が空欄のときは「未同定」として保存されます。分類を分かるところまで入れておくと、後で探しやすくなります。</div>';
+  } else if (name) {
+    html = nameCheckHtml(name);
+  } else if (!bySci) {
+    html = `<div class="msg">学名「${esc(sci)}」で新しい種として登録されます（和名は後から追加できます）</div>`;
+  }
+  if (bySci && bySci !== byName) {
+    html += `<div class="msg warn" style="margin-top:4px">⚠ 学名「${esc(sci)}」は「${esc(bySci.name)}」として登録済みです</div>`;
+  }
+  if (known) {
+    html += `<div class="small" style="margin-top:4px">登録済みの分類：${esc(taxonText(known)) || '未入力'}（変更は種の詳細画面の「種の情報を編集」から）</div>`;
+  }
+  $('#r-check').innerHTML = html;
+}
+
+// 「登録する」ボタン
+async function submitRegister() {
+  // --- 入力された値を集める ---
+  const name = $('#r-name').value.trim();
+  const sci = $('#r-sci').value.trim();
+  const taxon = readTaxon('r');                          // 分類（分類群・綱・目・科・属）
+  const place = $('#r-place').value.trim();
+  const date = $('#r-date').value;
+  const time = $('#r-time').value;
+  const year = date ? '' : $('#r-year').value;           // 日付が入っていれば年・月は使わない
+  const month = date ? '' : $('#r-month').value;
+  const memo = $('#r-memo').value.trim();
+  const targets = pending.filter(x => !x.skip);          // 「登録しない」以外の写真
+  const hasObs = Boolean(place || date || year || month || memo);  // 観察の情報が何かあるか
+
+  if (!name && !sci && !taxonText(taxon) && !targets.length && !hasObs) {
+    alert('何か1つは入力してください（名前・分類・場所・時期・写真など）');
+    return;
+  }
+  if (pending.length && !targets.length &&
+      !confirm('選んだ写真はすべて「登録しない」になっています。写真なしで登録しますか？')) return;
+
+  // --- どの種に登録するか決める（登録被りチェック） ---
+  let speciesId = null;      // 登録済みの種に追加するときの種ID
+  let newSpecies = null;     // 新しく作る種
+  if (name || sci) {
+    const byName = name ? checkName(name).exact : null;
+    const bySci = sci ? checkName(sci).exact : null;
+    if (byName) {
+      speciesId = byName.id;                             // 登録済みの種に記録を追加
+    } else if (bySci) {
+      if (!confirm(`学名「${sci}」は「${bySci.name}」として登録済みです。\n「${bySci.name}」に記録を追加しますか？`)) return;
+      speciesId = bySci.id;
+    } else {
+      // 新しい種。似た名前があれば念のため確認
+      const similar = name ? checkName(name).similar : [];
+      if (similar.length && !confirm(`似た名前の種があります：${similar.map(s => s.name).join('、')}\nそれでも「${name}」を新しい種として登録しますか？`)) return;
+      newSpecies = { id: newId(), name: name || sci, sciName: sci, ...taxon, memo: '', createdAt: nowIso() };
+    }
+  }
+
+  // 観察記録を作るか？（写真か観察情報がある、または名前がない＝未同定として残す場合）
+  const makeRecord = targets.length > 0 || hasObs || !(name || sci);
+  if (speciesId && !makeRecord) {
+    alert(`「${getSpecies(speciesId).name}」はすでに登録済みです。\n追加する写真・場所・時期・メモがあれば入力してください。`);
+    return;
+  }
+  if (newSpecies) {
+    await saveSpecies(newSpecies);
+    speciesId = newSpecies.id;
+  }
+
+  // --- 記録の共通部分 ---
+  const blank = {};
+  for (const [key] of TAXON_KEYS) blank[key] = '';
+  const base = {
+    speciesId,
+    ...(speciesId ? blank : taxon),                      // 未同定なら、分かるところまでの分類を記録に持たせる
+    place, date, time, year, month, memo,
+    image: '', thumb: '', hash: '',
+  };
+
+  // --- 保存 ---
+  $('#r-submit').disabled = true;
+  const useExif = $('#r-autodate').checked;
+  let done = 0;
+  try {
+    if (targets.length === 0 && makeRecord) {
+      // 写真なしの記録を1件
+      await savePhoto({ ...base, id: newId(), stage: $('#r-stage').value, sex: $('#r-sex').value, createdAt: nowIso() });
+      done++;
+    }
+    for (const x of targets) {
+      // 写真1枚につき記録1件。写真は縮小して保存する
+      $('#r-progress').textContent = `保存中… ${done + 1} / ${targets.length}`;
+      const img = await loadImage(x.file);
+      const exif = useExif ? x.exif : null;
+      await savePhoto({
+        ...base,
+        id: newId(),
+        image: resizeImage(img, CONFIG.IMAGE_MAX, CONFIG.IMAGE_QUALITY),   // 保存用の写真
+        thumb: resizeImage(img, CONFIG.THUMB_MAX, CONFIG.THUMB_QUALITY),   // 一覧用の小さい写真
+        hash: x.hash,
+        ...(exif ? { date: exif.date, time: exif.time, year: '', month: '' } : {}),  // 写真の撮影日時を優先
+        stage: x.stage,
+        sex: x.sex,
+        createdAt: nowIso(),
+      });
+      done++;
+    }
+  } catch (e) {
+    alert('保存中にエラーが起きました：' + e.message);
+  }
+  $('#r-submit').disabled = false;
+  $('#r-progress').textContent = '';
+  toast(newSpecies && done === 0 ? `「${newSpecies.name}」を登録しました` : `登録しました（記録 ${done} 件）`);
+  resetRegisterForm(true);                               // 場所と時期は次の登録のために残す
+  renderAll();
+  if (speciesId) { showTab('species'); openSpecies(speciesId); }
+  else showTab('unid');
+}
+
+// 登録フォームを空にする。keepPlace が true なら場所・時期は残す（同じ場所で続けて登録するとき便利）
+function resetRegisterForm(keepPlace = false) {
+  pending.forEach(x => URL.revokeObjectURL(x.preview));
+  pending = [];
+  const ids = ['#r-name', '#r-sci', '#r-memo'].concat(TAXON_KEYS.map(([key]) => '#r-' + key));
+  if (!keepPlace) ids.push('#r-place', '#r-date', '#r-time', '#r-year', '#r-month');
+  ids.forEach(id => { $(id).value = ''; });
+  $('#r-stage').value = STAGES[0];
+  $('#r-sex').value = SEXES[0];
+  renderPending();
+  onRegisterNameInput();
+}
+
+// -------------------------------------------------------------------
+// 11. データ・保存タブ（ファイルへの保存と読み込み）
+// -------------------------------------------------------------------
+function renderDataPage() {
+  const unid = state.photos.filter(p => !p.speciesId).length;
+  // 写真データのおおよその大きさ（MB）。文字1つ ≒ 1バイトとして計算
+  const mb = state.photos.reduce((sum, p) => sum + (p.image || '').length + (p.thumb || '').length, 0) / 1024 / 1024;
+  const unsaved = state.updatedAt > (state.savedAt || '');
+  $('#page-data').innerHTML = `
+    <div class="panel">
+      <h2>登録状況</h2>
+      <dl class="info">
+        <dt>種</dt><dd>${state.species.length} 種</dd>
+        <dt>記録</dt><dd>${state.photos.length} 件（写真 ${state.photos.filter(p => p.image).length} 枚・未同定 ${unid} 件）</dd>
+        <dt>類似種の比較</dt><dd>${state.comparisons.length} 件</dd>
+        <dt>データ量</dt><dd>約 ${mb.toFixed(1)} MB</dd>
+        <dt>最終変更</dt><dd>${state.updatedAt ? new Date(state.updatedAt).toLocaleString('ja-JP') : '—'}</dd>
+        <dt>最終ファイル保存</dt><dd>${state.savedAt ? new Date(state.savedAt).toLocaleString('ja-JP') : 'まだ保存していません'}</dd>
+      </dl>
+      ${unsaved ? '<div class="msg warn">ファイルに保存していない変更があります。下のボタンで保存してください。</div>' : ''}
+      ${idb ? '' : '<div class="msg warn">このブラウザではブラウザ内保存が使えません。閉じる前に必ずファイルに保存してください。</div>'}
+      ${isIPhoneBrowser() ? '<div class="msg warn" style="margin-top:6px">iPhone/iPad では、共有ボタン →「ホーム画面に追加」して、ホーム画面のアイコンから開いてください。Safari のまま使うと、しばらく開かなかったときにデータが消えることがあります（図鑑ファイルを読み込み直せば戻せます）。</div>' : ''}
+    </div>
+
+    <div class="panel">
+      <h2>図鑑ファイルとして保存（おすすめ）</h2>
+      <p class="small">アプリ本体と全データ（写真も）を1つの HTML ファイルにまとめて保存します。
+        このファイルを USB メモリなどに入れておけば、スマホやPCで開くだけで図鑑を見られます（ネット接続不要）。</p>
+      <button class="btn primary" onclick="exportHtml()">図鑑ファイル（.html）を保存</button>
+    </div>
+
+    <div class="panel">
+      <h2>バックアップ</h2>
+      <p class="small">データだけを JSON ファイルとして保存します。念のための控えに。</p>
+      <button class="btn" onclick="exportJson()">バックアップ（.json）を保存</button>
+    </div>
+
+    <div class="panel">
+      <h2>ファイルから読み込む</h2>
+      <p class="small">保存した図鑑ファイル（.html）やバックアップ（.json）を読み込みます。
+        「統合」なら今のデータに追加（同じ種・同じ写真は重複しないようにまとめます）、「置き換え」なら今のデータを消して入れ替えます。
+        スマホで追加した分をPCに取り込むときは「統合」を使ってください。</p>
+      <button class="btn" onclick="$('#import-file').click()">ファイルを選んで読み込む</button>
+    </div>
+
+    <div class="panel">
+      <h2>すべて削除</h2>
+      <p class="small">このブラウザ内のデータを全部消します（保存したファイルは消えません）。</p>
+      <button class="btn danger" onclick="deleteAll()">すべてのデータを削除</button>
+    </div>`;
+}
+
+// iPhone/iPad の Safari で、ホーム画面のアイコンからではなく開いているか
+function isIPhoneBrowser() {
+  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) ||
+              (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);  // 最近のiPadはMacのふりをする
+  return ios && !navigator.standalone;                   // standalone ＝ ホーム画面から開いた
+}
+
+// 保存用のデータをまとめる
+function buildData() {
+  return {
+    app: 'my-seibutsu-zukan',  // このアプリのデータであるという目印
+    version: 1,                // データ形式の版（将来形式を変えたとき用）
+    updatedAt: state.updatedAt,
+    savedAt: state.savedAt,
+    species: state.species,
+    photos: state.photos,
+    comparisons: state.comparisons,
+  };
+}
+
+// 今日の日付をファイル名用に '20261017' の形で
+function stamp() {
+  const d = new Date();
+  return d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
+}
+
+// ファイルを保存する。PCの Chrome / Edge なら保存先（USBなど）を選べる。それ以外は「ダウンロード」になる
+async function saveFile(content, filename, mime, ext) {
+  const blob = new Blob([content], { type: mime });
+  if (window.showSaveFilePicker) {                       // 保存先を選べる機能がある場合
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: filename,
+        types: [{ description: ext.toUpperCase() + ' ファイル', accept: { [mime]: ['.' + ext] } }],
+      });
+      const writer = await handle.createWritable();
+      await writer.write(blob);
+      await writer.close();
+      return true;
+    } catch (e) {
+      if (e.name === 'AbortError') return false;         // キャンセルされた
+      // それ以外のエラーなら、下のダウンロード方式で保存する
+    }
+  }
+  const a = document.createElement('a');                 // 見えないリンクを作って…
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();                                             // …クリックしたことにしてダウンロード
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+  return true;
+}
+
+// 図鑑ファイル（アプリ＋データ）を保存
+async function exportHtml() {
+  const prevSavedAt = state.savedAt;
+  state.savedAt = nowIso();
+  if (!state.updatedAt) state.updatedAt = state.savedAt;
+  // データを文字にする。「<」を別の書き方に変えておくのは、HTMLの中で壊れないようにするため
+  const json = JSON.stringify(buildData()).replace(/</g, '\\u003c');
+  const openTag = '<script type="application/json" id="embedded-data">';
+  const start = APP_TEMPLATE.indexOf(openTag) + openTag.length;  // 埋め込み場所の始まり
+  const end = APP_TEMPLATE.indexOf('<\/script>', start);          // 埋め込み場所の終わり
+  const html = '<!DOCTYPE html>\n' + APP_TEMPLATE.slice(0, start) + json + APP_TEMPLATE.slice(end);
+  const ok = await saveFile(html, `生物図鑑_${stamp()}.html`, 'text/html', 'html');
+  if (!ok) { state.savedAt = prevSavedAt; return; }      // キャンセルされたら元に戻す
+  await idbPut('meta', { key: 'times', updatedAt: state.updatedAt, savedAt: state.savedAt });
+  renderSaveStatus();
+  renderDataPage();
+  toast('図鑑ファイルを保存しました');
+}
+
+// バックアップ（データだけ）を保存
+async function exportJson() {
+  const ok = await saveFile(JSON.stringify(buildData()), `生物図鑑_バックアップ_${stamp()}.json`, 'application/json', 'json');
+  if (ok) toast('バックアップを保存しました');
+}
+
+// ファイル（.html または .json）からデータを取り出す
+function parseDataText(text) {
+  let jsonText = text;
+  if (text.trimStart().startsWith('<')) {                // HTMLファイルなら、埋め込み部分を探す
+    const openTag = '<script type="application/json" id="embedded-data">';
+    const start = text.indexOf(openTag);
+    if (start < 0) throw new Error('図鑑ファイルではないようです');
+    jsonText = text.slice(start + openTag.length, text.indexOf('<\/script>', start));
+  }
+  const data = JSON.parse(jsonText);
+  if (!data || data.app !== 'my-seibutsu-zukan') throw new Error('この図鑑のデータではないようです');
+  return data;
+}
+
+// ファイルを読み込む
+async function importFile(file) {
+  if (!file) return;
+  let data;
+  try {
+    data = parseDataText(await file.text());
+  } catch (e) {
+    alert('読み込めませんでした：' + e.message);
+    return;
+  }
+  const info = `種 ${data.species.length} 種・写真 ${data.photos.length} 枚`;
+  if (state.species.length + state.photos.length === 0) {
+    await replaceAllData(data);                          // 今が空なら、そのまま読み込む
+  } else if (confirm(`${info} を読み込みます。\n\n［OK］今のデータに統合（追加）する\n［キャンセル］他の方法を選ぶ`)) {
+    const r = await mergeData(data);
+    toast(`統合しました（種 +${r.sp}、写真 +${r.ph}、重複スキップ ${r.skip}）`);
+  } else if (confirm('今のデータを消して、読み込んだデータに置き換えますか？\n（今のデータは元に戻せません）')) {
+    await replaceAllData(data);
+    toast('置き換えました');
+  } else {
+    return;
+  }
+  renderAll();
+}
+
+// データの統合。同じ名前の種は1つにまとめ、同じ写真（同じ指紋）は追加しない
+async function mergeData(data) {
+  const idMap = {};                                      // 読み込んだ種ID → こちらの種ID の対応表
+  let sp = 0, ph = 0, skip = 0;
+  for (const s of data.species.map(upgradeSpecies)) {   // 古い形式なら今の形式にそろえてから
+    const same = getSpecies(s.id) || checkName(s.name).exact;  // 同じIDか同じ名前の種があるか
+    if (same) {
+      idMap[s.id] = same.id;                             // あればそちらに合流
+      // こちらが空欄の項目だけ、読み込んだ情報で埋める
+      const filled = { ...same };
+      for (const k of ['sciName', 'memo', ...TAXON_KEYS.map(([key]) => key)]) if (!filled[k] && s[k]) filled[k] = s[k];
+      await saveSpecies(filled);
+    } else {
+      idMap[s.id] = s.id;
+      await saveSpecies(s);
+      sp++;
+    }
+  }
+  const photoMap = {};                                   // 読み込んだ写真ID → こちらの写真ID の対応表
+  for (const p of data.photos.map(upgradePhoto)) {
+    const existing = getPhoto(p.id) || state.photos.find(x => x.hash && x.hash === p.hash);
+    const speciesId = p.speciesId ? (idMap[p.speciesId] || null) : null;
+    photoMap[p.id] = existing ? existing.id : p.id;
+    if (existing) {
+      // 同じ写真がある場合、こちらが未同定で読み込んだ方が同定済みなら、同定結果だけ取り込む
+      if (!existing.speciesId && speciesId) await savePhoto({ ...existing, speciesId });
+      skip++;
+      continue;
+    }
+    await savePhoto({ ...p, speciesId });
+    ph++;
+  }
+  // 類似種との比較：同じ組み合わせがすでにあれば、メモを付け足す
+  for (const c of data.comparisons || []) {
+    const a = idMap[c.a], b = idMap[c.b];
+    if (!a || !b || a === b) continue;                   // 種が見つからない／同じ種同士になったら飛ばす
+    const same = findComparison(a, b);
+    if (same) {
+      if (c.memo && !same.memo.includes(c.memo)) {
+        await saveComparison({ ...same, memo: same.memo ? same.memo + '\n\n' + c.memo : c.memo });
+      }
+    } else {
+      await saveComparison({ ...c, a, b, photoA: photoMap[c.photoA] || '', photoB: photoMap[c.photoB] || '' });
+    }
+  }
+  return { sp, ph, skip };
+}
+
+async function deleteAll() {
+  if (!confirm('すべてのデータを削除しますか？')) return;
+  if (!confirm('本当に削除しますか？ファイルに保存していないデータは元に戻せません。')) return;
+  await replaceAllData({ species: [], photos: [], comparisons: [], updatedAt: '', savedAt: '' });
+  renderAll();
+  toast('削除しました');
+}
+
+// -------------------------------------------------------------------
+// 12. 起動処理（ページを開いたときに最初に1回だけ動く）
+// -------------------------------------------------------------------
+async function init() {
+  // ブラウザ内データベースを開く。使えない環境（一部のスマホでファイルを直接開いた場合など）もある
+  try {
+    idb = await openDB();
+  } catch (e) {
+    idb = null;
+  }
+
+  // ブラウザ内に保存されているデータ
+  const local = {
+    species: await idbGetAll('species'),
+    photos: await idbGetAll('photos'),
+    comparisons: await idbGetAll('comparisons'),
+    times: (await idbGetAll('meta')).find(m => m.key === 'times') || {},
+  };
+
+  // このHTMLファイルに埋め込まれているデータ
+  let embedded = null;
+  try { embedded = JSON.parse($('#embedded-data').textContent); } catch (e) { embedded = null; }
+
+  const localEmpty = local.species.length + local.photos.length === 0;
+  if (embedded && localEmpty) {
+    // ブラウザ内が空 → ファイルのデータを使う
+    await replaceAllData(embedded);
+  } else if (embedded && (embedded.updatedAt || '') > (local.times.updatedAt || '') &&
+             confirm('このファイルのデータは、ブラウザ内のデータより新しいです。\nファイルのデータで置き換えますか？\n（キャンセルするとブラウザ内のデータを表示します）')) {
+    await replaceAllData(embedded);
+  } else {
+    // ブラウザ内のデータを使う
+    state.species = local.species.map(upgradeSpecies);  // 古い形式なら今の形式にそろえる
+    state.photos = local.photos.map(upgradePhoto);
+    state.comparisons = local.comparisons;
+    state.updatedAt = local.times.updatedAt || '';
+    state.savedAt = local.times.savedAt || '';
+  }
+
+  if (!idb) toast('ブラウザ内保存が使えない環境です（閲覧は可能）');
+
+  // ネット上に置いて開いたときだけ：オフラインで動くための仕組み（sw.js）を登録する
+  if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+    navigator.serviceWorker.register('sw.js').catch(() => {});  // 失敗しても図鑑は使えるので無視
+  }
+  // ブラウザに「このデータは勝手に消さないで」とお願いする（対応しているブラウザのみ）
+  if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+  resetRegisterForm();
+  renderAll();
+}
+
+// ブラウザ内保存が使えない環境で、ファイル未保存のままページを閉じようとしたら注意を出す
+window.addEventListener('beforeunload', e => {
+  if (!idb && state.updatedAt > (state.savedAt || '')) { e.preventDefault(); e.returnValue = ''; }
+});
+
+init();  // ← ここでアプリが動き始める
+</script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+{
+  "name": "マイ生物図鑑",
+  "short_name": "生物図鑑",
+  "start_url": "zukan.html",
+  "display": "standalone",
+  "background_color": "#f4f6f1",
+  "theme_color": "#2e7d32",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

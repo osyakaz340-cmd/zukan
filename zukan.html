@@ -167,6 +167,19 @@ h3.stage-head { font-size: 14px; margin: 14px 0 6px; border-left: 4px solid var(
 }
 #viewer img { max-width: 100%; max-height: 100%; object-fit: contain; }
 
+/* ---- 解説の図 ---- */
+.illust-grid {                                      /* 図を並べる（画面幅に合わせて列数が変わる） */
+  display: grid; gap: 8px; margin-top: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+}
+.illust-grid.one { grid-template-columns: 1fr; margin-top: 0; }  /* 比較画面では縦に1列 */
+.illust-grid figure {
+  margin: 0; cursor: zoom-in; border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
+  background: #fff;                                 /* イラストは白い背景の方が見やすい */
+}
+.illust-grid img { width: 100%; max-height: 320px; object-fit: contain; display: block; }
+.illust-grid figcaption { font-size: 12px; padding: 4px 8px; background: var(--card); color: var(--text); }
+
 /* ---- 類似種との違い ---- */
 .cmp-row {                                          /* 種のページに並ぶ比較の1行 */
   display: flex; gap: 10px; align-items: center; cursor: pointer; margin-bottom: 6px;
@@ -338,7 +351,15 @@ h3.stage-head { font-size: 14px; margin: 14px 0 6px; border-left: 4px solid var(
       <b>分かる項目だけ入力すればOK</b>です（すべて任意）。名前が分からないときは空欄のままで、「未同定」にまとめて保存されます。
     </p>
 
-    <!-- ① 生物名 -->
+    <!-- ① 代表写真（種の一覧や種のページで、その種の顔として表示される写真） -->
+    <div class="panel">
+      <h2>代表写真（サムネイル）<span class="opt">任意・1枚</span></h2>
+      <p class="small" style="margin:0 0 6px">種の一覧や種のページの一番上に表示される写真です。この写真も観察記録として保存されます。</p>
+      <input id="r-cover" type="file" accept="image/*" onchange="onCoverSelected(this.files[0])">
+      <div id="r-cover-preview" style="margin-top:6px"></div>  <!-- 選んだ代表写真のプレビュー -->
+    </div>
+
+    <!-- ② 生物名 -->
     <div class="panel">
       <h2>生物名<span class="opt">任意</span></h2>
       <div class="form">
@@ -352,7 +373,18 @@ h3.stage-head { font-size: 14px; margin: 14px 0 6px; border-left: 4px solid var(
       </div>
     </div>
 
-    <!-- ② 分類（登録済みの種を選んだときは隠れる） -->
+    <!-- ③ 解説（生物種そのものについての説明。種のページに表示される） -->
+    <div class="panel">
+      <h2>解説<span class="opt">任意・種についての説明</span></h2>
+      <p class="small" style="margin:0 0 6px" id="r-desc-note">この生物種の特徴や、見分けるポイント（同定形質）を書きます。今回の観察のことは下の「この時の様子」へ。</p>
+      <textarea id="r-desc" rows="4" placeholder="例：後翅に赤い斑紋と青い斑紋がある。前翅の付け根に黒い縞模様。幼虫はミカン類の葉を食べる。"></textarea>
+      <label class="f" style="margin-top:8px">解説の図（同定形質のイラストなど・複数選択OK）
+        <input id="r-illust-files" type="file" accept="image/*" multiple onchange="onIllustSelected(this.files)">
+      </label>
+      <div id="r-illust" style="margin-top:6px"></div>  <!-- 選んだ図のプレビューがここに並ぶ -->
+    </div>
+
+    <!-- ④ 分類（登録済みの種を選んだときは隠れる） -->
     <div class="panel" id="r-taxon-panel">
       <h2>分類（分かるところまで）<span class="opt">任意</span></h2>
       <p class="small" style="margin:0 0 6px">大きいグループから順に、分かる所まで入力してください。例：「昆虫」と「チョウ目」だけ、でもOK。</p>
@@ -365,13 +397,13 @@ h3.stage-head { font-size: 14px; margin: 14px 0 6px; border-left: 4px solid var(
       </div>
     </div>
 
-    <!-- ③ 観察場所 -->
+    <!-- ⑤ 観察場所 -->
     <div class="panel">
       <h2>観察場所<span class="opt">任意</span></h2>
       <input id="r-place" list="dl-place" placeholder="例：〇〇公園（いつも同じ書き方にすると絞り込みやすい）">
     </div>
 
-    <!-- ④ 観察時期 -->
+    <!-- ⑥ 観察時期 -->
     <div class="panel">
       <h2>観察時期<span class="opt">任意</span></h2>
       <div class="form two">
@@ -383,28 +415,29 @@ h3.stage-head { font-size: 14px; margin: 14px 0 6px; border-left: 4px solid var(
         <label class="f">年<input id="r-year" type="number" min="1900" max="2100" placeholder="例：2025"></label>
         <label class="f">月<select id="r-month"></select></label>
       </div>
-    </div>
-
-    <!-- ⑤ 様子・メモ -->
-    <div class="panel">
-      <h2>様子・メモ<span class="opt">任意</span></h2>
-      <div class="form two">
-        <label class="f">成長段階<select id="r-stage"></select></label>   <!-- 選択肢は JavaScript で作る -->
-        <label class="f">性別<select id="r-sex"></select></label>
-        <label class="f wide">メモ<textarea id="r-memo" placeholder="食草、行動、天気、特徴など"></textarea></label>
-      </div>
-    </div>
-
-    <!-- ⑥ 写真 -->
-    <div class="panel">
-      <h2>写真（複数選択OK）<span class="opt">任意</span></h2>
-      <input id="r-files" type="file" accept="image/*" multiple onchange="onFilesSelected(this.files)">
-      <label class="small" style="display:flex; gap:6px; align-items:flex-start; margin-top:6px">
+      <label class="small" style="display:flex; gap:6px; align-items:flex-start; margin-top:8px">
         <input id="r-autodate" type="checkbox" checked style="width:auto">
         写真に撮影日時が記録されていれば、その日時を観察時期として使う
       </label>
-      <p class="small">写真ごとに成長段階・性別を変えられます（例：オスとメス、成虫と幼虫を一度に登録）。</p>
-      <div id="r-pending"></div>  <!-- 選んだ写真のプレビューがここに並ぶ -->
+    </div>
+
+    <!-- ⑦ この時の様子（今回の観察についてのメモ。記録ごとに保存される） -->
+    <div class="panel">
+      <h2>この時の様子<span class="opt">任意・今回の観察についてのメモ</span></h2>
+      <div class="form two">
+        <label class="f">成長段階<select id="r-stage"></select></label>   <!-- 選択肢は JavaScript で作る -->
+        <label class="f">性別<select id="r-sex"></select></label>
+        <label class="f wide">観察メモ<textarea id="r-memo" placeholder="例：ミカンの葉に産卵していた。晴れ。3頭見かけた。"></textarea></label>
+      </div>
+      <p class="small" style="margin:6px 0 0">※ 種の特徴や見分け方は、上の「解説」に書いてください。</p>
+    </div>
+
+    <!-- ⑧ その他の写真 -->
+    <div class="panel">
+      <h2>その他の写真（複数選択OK）<span class="opt">任意</span></h2>
+      <p class="small" style="margin:0 0 6px">幼虫・蛹・オス・メスなど、代表写真以外の写真をまとめて登録できます。写真ごとに成長段階・性別を変えられます。</p>
+      <input id="r-files" type="file" accept="image/*" multiple onchange="onFilesSelected(this.files)">
+      <div id="r-pending" style="margin-top:6px"></div>  <!-- 選んだ写真のプレビューがここに並ぶ -->
     </div>
 
     <div class="row">
@@ -490,11 +523,14 @@ const SEASON_OF_MONTH = { 1:'冬', 2:'冬', 3:'春', 4:'春', 5:'春', 6:'夏', 
 // 2. アプリ全体のデータ（state ＝ 状態）
 // -------------------------------------------------------------------
 // species（種）1件の形：
-//   { id, name:和名, sciName:学名, group:分類群, cls:綱, order:目, family:科, genus:属, memo, createdAt }
+//   { id, name:和名, sciName:学名, group:分類群, cls:綱, order:目, family:科, genus:属,
+//     memo:解説（種の特徴・同定形質。前の版との互換のため項目名は memo のまま）,
+//     coverId:代表写真にする記録のID,
+//     descImages:解説の図のリスト [{ id, image, thumb, hash, caption:図の説明 }], createdAt }
 // photos（観察記録）1件の形：※ 写真なしの記録もある（そのときは image と thumb が空）
 //   { id, speciesId:どの種の記録か(未同定なら null), image:写真データ, thumb:サムネイル,
 //     hash:同じ写真の二重登録を防ぐための指紋, date:'2026-05-03', time:'14:20',
-//     year:年, month:月（日付が分からないとき用）, place:場所, stage:成長段階, sex:性別, memo,
+//     year:年, month:月（日付が分からないとき用）, place:場所, stage:成長段階, sex:性別, memo:観察メモ（この時の様子）,
 //     group/cls/order/family/genus:未同定のときの「分かるところまで」の分類, createdAt }
 // comparisons（類似種との比較）1件の形：※ 2つの種の「組」なので、どちらの種のページにも表示される
 //   { id, a:種ID, b:種ID, memo:違いのメモ, photoA:aの側に表示する写真ID, photoB:bの側に表示する写真ID,
@@ -507,6 +543,7 @@ const state = {
   savedAt: '',     // 最後にファイルへ保存した日時
   tab: 'species',  // 今表示しているタブ
   prevTab: 'species',  // 登録画面を開く前のタブ（「やめる」で戻る先）
+  namePrefix: '',      // 検索窓の「検索」ボタンで絞り込んだ文字（この文字で始まる名前の種だけ表示）
 };
 
 let idb = null;    // ブラウザ内データベース（IndexedDB）への接続。使えない環境では null のまま
@@ -575,7 +612,7 @@ function taxonText(obj) {
 
 // 古い形式のデータを今の形式にそろえる（前の版で作ったデータもそのまま使えるように）
 function upgradeSpecies(s) {
-  return { sciName: '', group: '', cls: '', order: '', family: '', genus: '', memo: '', ...s };
+  return { sciName: '', group: '', cls: '', order: '', family: '', genus: '', memo: '', coverId: '', descImages: [], ...s };
 }
 function upgradePhoto(p) {
   const q = { image: '', thumb: '', hash: '', date: '', time: '', year: '', month: '', place: '',
@@ -611,8 +648,12 @@ function getPhoto(id) { return state.photos.find(p => p.id === id); }
 // ある種の写真をすべて集める
 function photosOf(speciesId) { return state.photos.filter(p => p.speciesId === speciesId); }
 
-// 種の代表写真を選ぶ（成体の写真があればそれ、なければ最初の写真）。写真なしの記録は除く
+// 種の代表写真を選ぶ。代表写真に決めた写真があればそれ。
+// なければ、成体の写真 → 最初の写真 の順。写真なしの記録は除く
 function coverPhoto(speciesId) {
+  const sp = getSpecies(speciesId);
+  const chosen = sp && sp.coverId ? getPhoto(sp.coverId) : null;
+  if (chosen && chosen.speciesId === speciesId && chosen.thumb) return chosen;  // 決めた代表写真がまだ使えるか確認
   const list = photosOf(speciesId).filter(p => p.thumb);
   return list.find(p => p.stage === '成体') || list[0] || null;
 }
@@ -844,15 +885,21 @@ function loadImage(file) {
 }
 
 // 画像を縮小して、文字データ（data URL）に変換する。これで写真をデータとして保存できる
-function resizeImage(img, maxSize, quality) {
+// format：保存する形式（省略するとJPEG。イラスト用に 'image/png' も選べる）
+function resizeImage(img, maxSize, quality, format = 'image/jpeg') {
   const scale = Math.min(1, maxSize / Math.max(img.naturalWidth, img.naturalHeight));  // 縮小率（拡大はしない）
   const w = Math.round(img.naturalWidth * scale);
   const h = Math.round(img.naturalHeight * scale);
   const canvas = document.createElement('canvas');       // 絵を描くための見えないキャンバス
   canvas.width = w;
   canvas.height = h;
-  canvas.getContext('2d').drawImage(img, 0, 0, w, h);    // 縮小して描く
-  return canvas.toDataURL('image/jpeg', quality);        // JPEG形式の文字データにする
+  const ctx = canvas.getContext('2d');
+  if (format === 'image/jpeg') {                         // JPEGは透明にできないので、透明な部分は白で塗っておく
+    ctx.fillStyle = '#fff';                              // （塗らないと透明部分が黒くなる）
+    ctx.fillRect(0, 0, w, h);
+  }
+  ctx.drawImage(img, 0, 0, w, h);                        // 縮小して描く
+  return canvas.toDataURL(format, quality);              // 文字データにする
 }
 
 // -------------------------------------------------------------------
@@ -896,7 +943,7 @@ function keywordHit(text, keyword) {
 
 // 種の文字情報をつなげたもの（キーワード検索の対象）
 function speciesText(sp) {
-  return [sp.name, sp.sciName, taxonText(sp), sp.memo].join(' ');
+  return [sp.name, sp.sciName, taxonText(sp), sp.memo, ...(sp.descImages || []).map(im => im.caption)].join(' ');
 }
 
 // 種が条件に合うか
@@ -944,6 +991,14 @@ function resetFilters() {
   for (const id of ['#f-keyword', '#f-group', '#f-place', '#f-season', '#f-month', '#f-stage', '#f-sex']) {
     $(id).value = '';
   }
+  state.namePrefix = '';                                 // 検索窓での絞り込みも解除
+  renderLists();
+}
+
+// 検索窓での「〜で始まる名前」の絞り込みを解除する
+function clearNamePrefix() {
+  state.namePrefix = '';
+  $('#q').value = '';
   renderLists();
 }
 
@@ -1029,8 +1084,13 @@ function renderLists() {
 
 // 「種の一覧」タブ
 function renderSpeciesPage(f) {
-  const list = sortSpecies(state.species.filter(sp => speciesMatches(sp, f)), f.sort);
+  const list = sortSpecies(state.species.filter(sp =>
+    speciesMatches(sp, f) && (!state.namePrefix || nameStartsWith(sp, state.namePrefix))), f.sort);
   let html = `<div class="count">${list.length} 種 / 登録 ${state.species.length} 種</div>`;
+  if (state.namePrefix) {                                // 検索窓で絞り込み中なら、その表示と解除ボタン
+    html += `<div class="msg ok row" style="margin-bottom:8px">「${esc(state.namePrefix)}」で始まる名前の種
+      <button class="btn" style="padding:2px 10px;margin-left:auto" onclick="clearNamePrefix()">解除</button></div>`;
+  }
   if (list.length === 0) {
     html += `<div class="empty">${state.species.length ? '条件に合う種がありません' : 'まだ登録がありません。右下の「＋ 登録する」から始めましょう。<br>以前のデータがある場合は「データ・保存」タブ →「ファイルを選んで読み込む」で引き継げます'}</div>`;
   } else {
@@ -1131,13 +1191,20 @@ function speciesDetailHtml(id) {
   const sp = getSpecies(id);
   if (!sp) return '<p>この種は削除されました。</p>';
   const photos = photosOf(id).sort((a, b) => dateKey(a).localeCompare(dateKey(b)));  // 観察日の古い順
+  const cover = coverPhoto(id);                          // 代表写真（ページの一番上に大きく出す）
   let html = `
     <h2 style="margin:0 40px 0 0">${esc(sp.name)}</h2>
     ${sp.sciName ? `<div class="sci" style="font-style:italic;color:var(--sub)">${esc(sp.sciName)}</div>` : ''}
+    ${cover ? `<img class="big-photo" style="margin-top:8px" src="${cover.image}" alt="" onclick="viewImage('${cover.id}')">` : ''}
+    <div class="panel" style="margin:10px 0">
+      <h2 style="font-size:14px;margin:0 0 4px">解説</h2>
+      <div style="white-space:pre-wrap">${sp.memo ? esc(sp.memo) : '<span class="small">まだ解説がありません。「種の情報を編集」から、特徴や見分けるポイントを書けます。</span>'}</div>
+      ${illustGridHtml(sp)}
+      <button class="btn" style="margin-top:8px;padding:4px 12px;font-size:13px" onclick="openIllustEdit('${id}')">🖼 図を追加・編集</button>
+    </div>
     <dl class="info">
       ${TAXON_KEYS.map(([key, label]) => `<dt>${label}</dt><dd>${esc(sp[key]) || '—'}</dd>`).join('')}
       <dt>記録</dt><dd>${photos.length} 件（写真 ${photos.filter(p => p.image).length} 枚）</dd>
-      ${sp.memo ? `<dt>メモ</dt><dd style="white-space:pre-wrap">${esc(sp.memo)}</dd>` : ''}
     </dl>
     <div class="row">
       <button class="btn" onclick="addPhotoToSpecies('${id}')">＋ 記録・写真を追加</button>
@@ -1194,7 +1261,7 @@ function speciesEditHtml(id) {
       <div class="wide" id="se-check"></div>
       <label class="f wide">学名<input id="se-sci" value="${esc(sp.sciName)}"></label>
       ${taxonInputsHtml('se', sp)}
-      <label class="f wide">メモ<textarea id="se-memo">${esc(sp.memo)}</textarea></label>
+      <label class="f wide">解説（種の特徴・見分けるポイント）<textarea id="se-memo" rows="6">${esc(sp.memo)}</textarea></label>
     </div>
     <div class="row" style="margin-top:12px">
       <button class="btn primary" onclick="saveSpeciesEdit('${id}')">保存</button>
@@ -1280,7 +1347,12 @@ function photoDetailHtml(id) {
            <label class="f" style="margin-top:6px">写真を付ける
              <input type="file" accept="image/*" onchange="attachPhoto('${id}', this.files[0])">
            </label></div>`}
-    ${sp ? `<button class="btn" onclick="openSpecies('${sp.id}')">この種の記録をすべて見る</button>` : ''}
+    <div class="row">
+      ${sp ? `<button class="btn" onclick="openSpecies('${sp.id}')">この種の記録をすべて見る</button>` : ''}
+      ${sp && p.image ? (coverPhoto(sp.id) === p
+        ? '<span class="tag">★ この種の代表写真</span>'
+        : `<button class="btn" onclick="setCoverPhoto('${id}')">★ 代表写真にする</button>`) : ''}
+    </div>
     <div class="form" style="margin-top:12px">
       <label class="f wide">種名（空欄にすると未同定）
         <input id="pe-name" list="dl-species" value="${esc(sp ? sp.name : '')}" placeholder="名前が分かったら入力" oninput="onPhotoNameInput()">
@@ -1297,7 +1369,7 @@ function photoDetailHtml(id) {
       <label class="f">年（日付不明のとき）<input id="pe-year" type="number" value="${esc(p.year)}"></label>
       <label class="f">月（日付不明のとき）<select id="pe-month">${monthOptionsHtml(p.month, '分からない')}</select></label>
       <label class="f wide">観察場所<input id="pe-place" list="dl-place" value="${esc(p.place)}"></label>
-      <label class="f wide">メモ<textarea id="pe-memo">${esc(p.memo)}</textarea></label>
+      <label class="f wide">観察メモ（この時の様子）<textarea id="pe-memo">${esc(p.memo)}</textarea></label>
     </div>
     <div class="row" style="margin-top:12px">
       <button class="btn primary" onclick="savePhotoEdit('${id}')">保存</button>
@@ -1373,6 +1445,14 @@ async function savePhotoEdit(id) {
   toast(!p.speciesId && speciesId ? `「${name}」として同定しました` : '保存しました');
 }
 
+// この記録の写真を、種の代表写真にする
+async function setCoverPhoto(id) {
+  const p = getPhoto(id);
+  await saveSpecies({ ...getSpecies(p.speciesId), coverId: id });
+  drawModal(true);
+  toast('代表写真にしました');
+}
+
 // 写真なしの記録に、あとから写真を付ける
 async function attachPhoto(id, file) {
   if (!file) return;
@@ -1399,6 +1479,119 @@ async function deletePhoto(id) {
   renderFilterOptions();
   closeModal();
   toast('記録を削除しました');
+}
+
+// -------------------------------------------------------------------
+// 9.3 解説の図（同定形質のイラストなど。種ごとに複数枚、説明文つき）
+//     観察記録の写真とは別に、種のデータの中（descImages）に保存する
+// -------------------------------------------------------------------
+
+// 画像ファイル1枚を「解説の図」のデータにする
+// PNG（イラストによく使う形式）はPNGのまま保存して、細い線がにじまないようにする
+async function makeIllustration(file, caption = '') {
+  const buffer = await file.arrayBuffer();
+  const img = await loadImage(file);
+  const isPng = file.type === 'image/png';
+  return {
+    id: newId(),
+    image: resizeImage(img, CONFIG.IMAGE_MAX, 0.92, isPng ? 'image/png' : 'image/jpeg'),  // 表示用（画質高め）
+    thumb: resizeImage(img, CONFIG.THUMB_MAX, CONFIG.THUMB_QUALITY),                      // 小さい版
+    hash: hashBytes(buffer),                             // 同じ図の二重登録を防ぐための指紋
+    caption,                                             // 図の説明（例：胸部側面の模様）
+  };
+}
+
+// 種のページの「解説」の下に並べる図のHTML
+function illustGridHtml(sp) {
+  const imgs = sp.descImages || [];
+  if (!imgs.length) return '';
+  return `<div class="illust-grid">${imgs.map(im => `
+    <figure onclick="viewDescImage('${sp.id}', '${im.id}')">
+      <img src="${im.image}" alt="">
+      ${im.caption ? `<figcaption>${esc(im.caption)}</figcaption>` : ''}
+    </figure>`).join('')}</div>`;
+}
+
+// 解説の図を全画面で見る
+function viewDescImage(speciesId, imgId) {
+  const im = (getSpecies(speciesId).descImages || []).find(x => x.id === imgId);
+  if (!im) return;
+  $('#viewer-img').src = im.image;
+  $('#viewer').hidden = false;
+}
+
+// ---- 解説の図を追加・編集する画面 ----
+function openIllustEdit(speciesId) { pushModal(() => illustEditHtml(speciesId)); }
+
+function illustEditHtml(speciesId) {
+  const sp = getSpecies(speciesId);
+  if (!sp) return '<p>この種は削除されました。</p>';
+  const imgs = sp.descImages || [];
+  return `
+    <h2 style="margin:0 40px 6px 0">「${esc(sp.name)}」の解説の図</h2>
+    <p class="small" style="margin:0 0 10px">同定形質のイラストや図を追加できます（例：トンボの胸部側面の模様）。
+      変更はすぐに保存されます。PNG形式の画像は、線がにじまないようにそのままの形式で保存します。</p>
+    <label class="f">図を追加（複数選択OK）
+      <input type="file" accept="image/*" multiple onchange="addIllustrations('${speciesId}', this.files)">
+    </label>
+    <div id="illust-progress" class="small"></div>
+    ${imgs.length ? '' : '<p class="empty" style="padding:20px 0">まだ図がありません</p>'}
+    ${imgs.map((im, i) => `
+      <div class="pending-item">
+        <img src="${im.thumb}" alt="" style="background:#fff;object-fit:contain" onclick="viewDescImage('${speciesId}', '${im.id}')">
+        <div class="opts">
+          <label class="f wide">図の説明
+            <input value="${esc(im.caption)}" placeholder="例：胸部側面の模様（オス）" onchange="setIllustCaption('${speciesId}', '${im.id}', this.value)">
+          </label>
+          <div class="wide row">
+            <button class="btn" style="padding:2px 10px" ${i === 0 ? 'disabled' : ''} onclick="moveIllust('${speciesId}', ${i}, -1)">↑</button>
+            <button class="btn" style="padding:2px 10px" ${i === imgs.length - 1 ? 'disabled' : ''} onclick="moveIllust('${speciesId}', ${i}, 1)">↓</button>
+            <button class="btn danger" style="padding:2px 10px;margin-left:auto" onclick="deleteIllust('${speciesId}', '${im.id}')">削除</button>
+          </div>
+        </div>
+      </div>`).join('')}
+    <div class="row" style="margin-top:10px"><button class="btn" onclick="closeModal()">閉じる</button></div>`;
+}
+
+// 図を追加する（すでに同じ図があれば飛ばす）
+async function addIllustrations(speciesId, files) {
+  const sp = getSpecies(speciesId);
+  const list = [...(sp.descImages || [])];
+  let added = 0, skipped = 0;
+  for (const file of files) {
+    $('#illust-progress').textContent = `追加中… ${added + skipped + 1} / ${files.length}`;
+    const im = await makeIllustration(file);
+    if (list.some(x => x.hash === im.hash)) { skipped++; continue; }  // 同じ図は追加しない
+    list.push(im);
+    added++;
+  }
+  await saveSpecies({ ...getSpecies(speciesId), descImages: list });
+  drawModal(true);
+  toast(`図を ${added} 枚追加しました` + (skipped ? `（同じ図 ${skipped} 枚は飛ばしました）` : ''));
+}
+
+// 図の説明を変える
+async function setIllustCaption(speciesId, imgId, caption) {
+  const sp = getSpecies(speciesId);
+  const list = sp.descImages.map(x => x.id === imgId ? { ...x, caption: caption.trim() } : x);
+  await saveSpecies({ ...sp, descImages: list });
+}
+
+// 図の順番を入れ替える（dir：-1で上へ、1で下へ）
+async function moveIllust(speciesId, i, dir) {
+  const sp = getSpecies(speciesId);
+  const list = [...sp.descImages];
+  [list[i], list[i + dir]] = [list[i + dir], list[i]];   // 2つを入れ替える
+  await saveSpecies({ ...sp, descImages: list });
+  drawModal(true);
+}
+
+async function deleteIllust(speciesId, imgId) {
+  if (!confirm('この図を削除しますか？')) return;
+  const sp = getSpecies(speciesId);
+  await saveSpecies({ ...sp, descImages: sp.descImages.filter(x => x.id !== imgId) });
+  drawModal(true);
+  toast('図を削除しました');
 }
 
 // -------------------------------------------------------------------
@@ -1559,6 +1752,15 @@ async function addSimilarById(speciesId, otherId) {
 // leftId ＝ 左側に出す種（開いた種のページの種が左に来るようにする）
 function openCompare(cid, leftId) { pushModal(() => compareHtml(cid, leftId)); }
 
+let compareMode = 'photo';  // 比較画面で何を並べるか：'photo'＝写真、'illust'＝解説の図
+
+// 比較画面の「写真で比べる／解説の図で比べる」を切り替える
+function setCompareMode(mode) {
+  flushCompareMemo();
+  compareMode = mode;
+  drawModal(true);
+}
+
 function compareHtml(cid, leftId) {
   const c = getComparison(cid);
   if (!c) return '<p>この比較は削除されました。</p>';
@@ -1568,6 +1770,20 @@ function compareHtml(cid, leftId) {
 
   // 片側（1つの種）の表示を作る
   const side = sp => {
+    if (compareMode === 'illust') {                      // 「解説の図」を並べる場合
+      const imgs = sp.descImages || [];
+      return `
+        <div class="cmp-side">
+          <div class="cmp-name" onclick="openSpecies('${sp.id}')">${esc(sp.name)} ›</div>
+          ${imgs.length ? `<div class="illust-grid one">${imgs.map(im => `
+            <figure onclick="viewDescImage('${sp.id}', '${im.id}')">
+              <img src="${im.image}" alt="">
+              ${im.caption ? `<figcaption>${esc(im.caption)}</figcaption>` : ''}
+            </figure>`).join('')}</div>`
+            : `<div class="cmp-big noimg">図なし</div>
+               <button class="btn" style="margin-top:4px;padding:2px 8px;font-size:12px" onclick="openIllustEdit('${sp.id}')">図を追加</button>`}
+        </div>`;
+    }
     const cur = comparePhoto(c, sp.id);                  // 今表示している写真
     const photos = photosOf(sp.id).filter(p => p.thumb); // 写真のある記録だけ
     return `
@@ -1591,8 +1807,14 @@ function compareHtml(cid, leftId) {
 
   return `
     <h2 style="margin:0 40px 6px 0">${esc(left.name)} と ${esc(right.name)} の違い</h2>
-    <p class="small" style="margin:0 0 6px">下の小さい写真をタップすると表示する写真を変えられます。大きい写真をタップすると拡大します。</p>
-    ${stages.length ? `
+    <div class="row" style="margin-bottom:6px">
+      <button class="btn ${compareMode === 'photo' ? 'primary' : ''}" style="padding:4px 12px" onclick="setCompareMode('photo')">📷 写真で比べる</button>
+      <button class="btn ${compareMode === 'illust' ? 'primary' : ''}" style="padding:4px 12px" onclick="setCompareMode('illust')">🖼 解説の図で比べる</button>
+    </div>
+    <p class="small" style="margin:0 0 6px">${compareMode === 'photo'
+      ? '下の小さい写真をタップすると表示する写真を変えられます。大きい写真をタップすると拡大します。'
+      : '各種の「解説の図」を並べています。図をタップすると拡大します。'}</p>
+    ${compareMode === 'photo' && stages.length ? `
       <label class="row small">成長段階をそろえる：
         <select style="width:auto" onchange="alignCompareStage('${cid}', this.value)">
           <option value="">選ぶ</option>${stages.map(st => `<option>${esc(st)}</option>`).join('')}
@@ -1672,18 +1894,25 @@ async function deleteComparison(cid) {
 let searchHits = [];   // 今の検索結果（種のリスト）
 let searchSel = -1;    // 矢印キーで選んでいる結果の番号（-1 ＝ 何も選んでいない）
 
-// 名前で種を探す。和名・学名のどこかに入力した文字が含まれていればヒット
+// 名前で種を探す。和名か学名が、入力した文字で「始まる」ものだけヒット（前方一致）
+//   例：「あ」→ アサギマダラ、アトリ（キアゲハのように途中に「ア」があるものは出ない）
+//       「あさ」→ アサギマダラ だけ
 // （ひらがな/カタカナ、全角/半角、大文字/小文字の違いは無視）
-// 並び順：完全に一致 → 前方一致（〜で始まる）→ 途中に含む
+// 並び順：完全に一致 → 前方一致（〜で始まる）
+function nameStartsWith(sp, query) {
+  const q = normalize(query);
+  return Boolean(q) && [normalize(sp.name), normalize(sp.sciName)].some(n => n.startsWith(q));
+}
 function searchSpecies(query) {
   const q = normalize(query);
   if (!q) return [];
   const score = sp => {                                  // 一致の度合いを点数にする（小さいほど上に出る）
     const names = [normalize(sp.name), normalize(sp.sciName)];
     if (names.includes(q)) return 0;                     // 完全一致
-    if (names.some(n => n.startsWith(q))) return 1;      // 前方一致
-    if (names.some(n => n.includes(q))) return 2;        // 途中に含む
+    if (nameStartsWith(sp, query)) return 1;             // 前方一致（〜で始まる）
     return -1;                                           // 一致しない
+    // ※ 名前の途中に含むものも出したくなったら、上の行の前に次の1行を足す：
+    //    if (names.some(n => n.includes(q))) return 2;
   };
   return state.species
     .map(sp => ({ sp, s: score(sp) }))                   // 種ごとに点数をつけて…
@@ -1740,11 +1969,11 @@ function runSearch() {
     closeSearch();
     modalStack.length = 0;
     openSpecies((exact || hits[0]).id);
-  } else if (hits.length > 1) {                          // 複数あれば「種の一覧」をその名前で絞り込んで表示
+  } else if (hits.length > 1) {                          // 複数あれば「種の一覧」を「〜で始まる名前」で絞り込んで表示
     closeSearch();
     modalStack.length = 0;
     drawModal();
-    $('#f-keyword').value = query;
+    state.namePrefix = query;
     showTab('species');
   } else {
     onSearchInput();                                     // 見つからなければ「登録しますか？」を表示
@@ -1793,6 +2022,9 @@ document.addEventListener('click', e => {
 // -------------------------------------------------------------------
 // 10. 登録画面
 // -------------------------------------------------------------------
+let coverPending = null;   // 登録画面で選んだ「代表写真」（まだ登録していないもの）。なければ null
+let pendingIllust = [];   // 登録画面で選んだ「解説の図」（まだ登録していないもの）
+let descPrefill = null;    // 解説欄に、登録済みの種の解説を自動で入れたときの記録 { id:種ID, text:入れた文章 }
 
 // 「＋ 登録する」ボタンを押したとき：登録画面を開く
 function openRegister() {
@@ -1803,9 +2035,9 @@ function openRegister() {
 
 // 登録画面に何か入力されているか
 function hasRegisterInput() {
-  const ids = ['#r-name', '#r-sci', '#r-place', '#r-date', '#r-time', '#r-year', '#r-month', '#r-memo']
+  const ids = ['#r-name', '#r-sci', '#r-desc', '#r-place', '#r-date', '#r-time', '#r-year', '#r-month', '#r-memo']
     .concat(TAXON_KEYS.map(([key]) => '#r-' + key));
-  return pending.length > 0 || ids.some(id => $(id).value.trim() !== '');
+  return Boolean(coverPending) || pending.length > 0 || pendingIllust.length > 0 || ids.some(id => $(id).value.trim() !== '');
 }
 
 // 「やめる」ボタン：入力を消して、元のタブに戻る
@@ -1816,58 +2048,131 @@ function cancelRegister() {
   showTab(back);
 }
 
-// 写真が選ばれたとき：指紋（ハッシュ）を計算して二重登録をチェックし、プレビューを出す
-async function onFilesSelected(files) {
-  $('#r-progress').textContent = '写真を確認中…';
-  for (const file of files) {
-    const buffer = await file.arrayBuffer();             // ファイルの中身を読む
-    const hash = hashBytes(buffer);
-    const already = state.photos.find(p => p.hash === hash);        // 登録済みの写真と同じ？
-    const dupInList = pending.some(x => x.hash === hash);           // 今回選んだ中で同じ？
-    if (dupInList) continue;                             // 同じファイルを2回選んだだけなら無視
-    pending.push({
-      id: newId(),
-      file,
-      hash,
-      exif: readExifDate(buffer),                        // 撮影日時（読めなければ null）
-      preview: URL.createObjectURL(file),                // プレビュー表示用の一時URL
-      stage: $('#r-stage').value,                        // 最初は「様子」欄で選んだ成長段階にしておく
-      sex: $('#r-sex').value,
-      already,                                           // 登録済みならその写真のデータ
-      skip: Boolean(already),                            // 登録済みなら最初から「登録しない」にしておく
-    });
-  }
-  $('#r-files').value = '';                              // 同じファイルをもう一度選べるようにリセット
-  $('#r-progress').textContent = '';
-  // 観察日の欄が空なら、1枚目の撮影日を入れておく
-  const first = pending.find(x => x.exif);
-  if (first && !$('#r-date').value) { $('#r-date').value = first.exif.date; $('#r-time').value = first.exif.time; }
+// 写真ファイル1枚を読み、登録前の写真のデータ（プレビュー用）を作る
+async function readPhotoFile(file) {
+  const buffer = await file.arrayBuffer();               // ファイルの中身を読む
+  const hash = hashBytes(buffer);
+  const already = state.photos.find(p => p.hash === hash);  // 登録済みの写真と同じ？
+  return {
+    id: newId(),
+    file,
+    hash,
+    exif: readExifDate(buffer),                          // 撮影日時（読めなければ null）
+    preview: URL.createObjectURL(file),                  // プレビュー表示用の一時URL
+    stage: $('#r-stage').value,                          // 最初は「この時の様子」欄で選んだ成長段階にしておく
+    sex: $('#r-sex').value,
+    already,                                             // 登録済みならその写真のデータ
+    skip: Boolean(already),                              // 登録済みなら最初から「登録しない」にしておく
+  };
+}
+
+// 観察日の欄が空なら、写真の撮影日を入れておく
+function fillDateFromPhoto(x) {
+  if (x && x.exif && !$('#r-date').value) { $('#r-date').value = x.exif.date; $('#r-time').value = x.exif.time; }
+}
+
+// 代表写真が選ばれたとき
+async function onCoverSelected(file) {
+  if (!file) return;
+  if (coverPending) URL.revokeObjectURL(coverPending.preview);  // 前に選んでいた写真は片付ける
+  coverPending = await readPhotoFile(file);
+  pending = pending.filter(x => x.hash !== coverPending.hash);  // 「その他の写真」に同じ写真があれば外す
+  $('#r-cover').value = '';                              // 同じファイルをもう一度選べるようにリセット
+  fillDateFromPhoto(coverPending);
+  renderCover();
   renderPending();
 }
 
-// 選んだ写真のプレビューを描く
-function renderPending() {
-  $('#r-pending').innerHTML = pending.map((x, i) => `
+// 代表写真のプレビューを描く
+function renderCover() {
+  $('#r-cover-preview').innerHTML = coverPending
+    ? pendingItemHtml(coverPending, 'coverPending', 'removeCover()')
+    : '';
+}
+
+function removeCover() {
+  URL.revokeObjectURL(coverPending.preview);
+  coverPending = null;
+  renderCover();
+}
+
+// 「その他の写真」が選ばれたとき：指紋（ハッシュ）で二重登録をチェックし、プレビューを出す
+async function onFilesSelected(files) {
+  $('#r-progress').textContent = '写真を確認中…';
+  for (const file of files) {
+    const x = await readPhotoFile(file);
+    const dupInList = pending.some(y => y.hash === x.hash) ||           // 今回選んだ中に同じ写真がある
+                      (coverPending && coverPending.hash === x.hash);   // 代表写真と同じ
+    if (dupInList) { URL.revokeObjectURL(x.preview); continue; }       // 同じファイルを2回選んだだけなら無視
+    pending.push(x);
+  }
+  $('#r-files').value = '';                              // 同じファイルをもう一度選べるようにリセット
+  $('#r-progress').textContent = '';
+  fillDateFromPhoto(pending.find(x => x.exif));
+  renderPending();
+}
+
+// 登録前の写真1枚分の表示を作る（代表写真と「その他の写真」で共通）
+//   ref … その写真のデータを指す書き方（'coverPending' や 'pending[0]'）
+//   removeCall … 「外す」ボタンを押したときに実行する命令
+function pendingItemHtml(x, ref, removeCall) {
+  return `
     <div class="pending-item" style="${x.skip ? 'opacity:.5' : ''}">
       <img src="${x.preview}" alt="">
       <div class="opts">
         <div class="wide small">${x.exif ? '撮影：' + fmtDate(x.exif.date, x.exif.time) : '撮影日時の記録なし（「観察時期」の欄を使います）'}</div>
         ${x.already ? `<div class="wide msg warn">⚠ この写真は登録済みです（${esc(photoTitle(x.already))}）</div>` : ''}
-        <label class="f">成長段階<select onchange="pending[${i}].stage=this.value">${optionsHtml(STAGES, x.stage, null)}</select></label>
-        <label class="f">性別<select onchange="pending[${i}].sex=this.value">${optionsHtml(SEXES, x.sex, null)}</select></label>
+        <label class="f">成長段階<select onchange="${ref}.stage=this.value">${optionsHtml(STAGES, x.stage, null)}</select></label>
+        <label class="f">性別<select onchange="${ref}.sex=this.value">${optionsHtml(SEXES, x.sex, null)}</select></label>
         <div class="wide row">
           <label class="row small"><input type="checkbox" style="width:auto" ${x.skip ? 'checked' : ''}
-            onchange="pending[${i}].skip=this.checked; renderPending()"> 登録しない</label>
-          <button class="btn" style="padding:2px 8px;margin-left:auto" onclick="removePending(${i})">外す</button>
+            onchange="${ref}.skip=this.checked; renderCover(); renderPending()"> 登録しない</label>
+          <button class="btn" style="padding:2px 8px;margin-left:auto" onclick="${removeCall}">外す</button>
         </div>
       </div>
-    </div>`).join('');
+    </div>`;
+}
+
+// 「その他の写真」のプレビューを描く
+function renderPending() {
+  $('#r-pending').innerHTML = pending.map((x, i) => pendingItemHtml(x, `pending[${i}]`, `removePending(${i})`)).join('');
 }
 
 function removePending(i) {
   URL.revokeObjectURL(pending[i].preview);               // 一時URLを片付ける
   pending.splice(i, 1);                                  // リストから外す
   renderPending();
+}
+
+// 「解説の図」が選ばれたとき：プレビューを出す（縮小は登録するときに行う）
+function onIllustSelected(files) {
+  for (const file of files) {
+    pendingIllust.push({ id: newId(), file, preview: URL.createObjectURL(file), caption: '' });
+  }
+  $('#r-illust-files').value = '';
+  renderPendingIllust();
+}
+
+// 選んだ「解説の図」のプレビューを描く（図ごとに説明を書ける）
+function renderPendingIllust() {
+  $('#r-illust').innerHTML = pendingIllust.map((x, i) => `
+    <div class="pending-item">
+      <img src="${x.preview}" alt="" style="background:#fff;object-fit:contain">
+      <div class="opts">
+        <label class="f wide">図の説明
+          <input value="${esc(x.caption)}" placeholder="例：胸部側面の模様" oninput="pendingIllust[${i}].caption=this.value">
+        </label>
+        <div class="wide row">
+          <button class="btn" style="padding:2px 8px;margin-left:auto" onclick="removePendingIllust(${i})">外す</button>
+        </div>
+      </div>
+    </div>`).join('');
+}
+
+function removePendingIllust(i) {
+  URL.revokeObjectURL(pendingIllust[i].preview);
+  pendingIllust.splice(i, 1);
+  renderPendingIllust();
 }
 
 // 和名・学名を入力するたびに、登録被りチェックを表示する
@@ -1893,6 +2198,22 @@ function onRegisterNameInput() {
     html += `<div class="small" style="margin-top:4px">登録済みの分類：${esc(taxonText(known)) || '未入力'}（変更は種の詳細画面の「種の情報を編集」から）</div>`;
   }
   $('#r-check').innerHTML = html;
+
+  // 解説欄：登録済みの種なら、その種の解説を入れておく（ここで書き足すと、その種の解説が更新される）
+  const desc = $('#r-desc');
+  if (descPrefill && (!known || known.id !== descPrefill.id) && desc.value === descPrefill.text) {
+    desc.value = '';                                     // 別の種に変わったら、自動で入れた解説を消す
+    descPrefill = null;
+  }
+  if (known && !desc.value.trim() && known.memo) {
+    desc.value = known.memo;
+    descPrefill = { id: known.id, text: known.memo };
+  }
+  const nImg = known ? (known.descImages || []).length : 0;
+  $('#r-desc-note').textContent = known
+    ? `登録済みの「${known.name}」の解説です。ここで書き直すと、その種の解説が更新されます。` +
+      (nImg ? `（登録済みの図 ${nImg} 枚。ここで選んだ図は追加されます）` : '')
+    : 'この生物種の特徴や、見分けるポイント（同定形質）を書きます。今回の観察のことは下の「この時の様子」へ。';
 }
 
 // 「登録する」ボタン
@@ -1900,22 +2221,35 @@ async function submitRegister() {
   // --- 入力された値を集める ---
   const name = $('#r-name').value.trim();
   const sci = $('#r-sci').value.trim();
+  let desc = $('#r-desc').value.trim();                  // 解説（種についての説明）
   const taxon = readTaxon('r');                          // 分類（分類群・綱・目・科・属）
   const place = $('#r-place').value.trim();
   const date = $('#r-date').value;
   const time = $('#r-time').value;
   const year = date ? '' : $('#r-year').value;           // 日付が入っていれば年・月は使わない
   const month = date ? '' : $('#r-month').value;
-  const memo = $('#r-memo').value.trim();
-  const targets = pending.filter(x => !x.skip);          // 「登録しない」以外の写真
+  let memo = $('#r-memo').value.trim();                  // 観察メモ（今回の観察について）
+  const cover = coverPending && !coverPending.skip ? coverPending : null;  // 登録する代表写真
+  const targets = (cover ? [cover] : []).concat(pending.filter(x => !x.skip));  // 登録する写真すべて
   const hasObs = Boolean(place || date || year || month || memo);  // 観察の情報が何かあるか
 
-  if (!name && !sci && !taxonText(taxon) && !targets.length && !hasObs) {
-    alert('何か1つは入力してください（名前・分類・場所・時期・写真など）');
+  if (!name && !sci && !desc && !pendingIllust.length && !taxonText(taxon) && !targets.length && !hasObs) {
+    alert('何か1つは入力してください（名前・解説・分類・場所・時期・写真など）');
     return;
   }
-  if (pending.length && !targets.length &&
+  if (!name && !sci && pendingIllust.length) {           // 図は種に付けるものなので、名前が必要
+    alert('「解説の図」を保存するには、生物名（和名か学名）を入力してください。\n名前が分からない場合は、図を「外す」で外してから登録してください。');
+    return;
+  }
+  if ((coverPending || pending.length) && !targets.length &&
       !confirm('選んだ写真はすべて「登録しない」になっています。写真なしで登録しますか？')) return;
+
+  // 名前がないのに解説が書いてある → 種がないので解説を保存する先がない
+  if (!name && !sci && desc) {
+    if (!confirm('名前が空欄のため、解説を保存する生物種がありません。\n解説の内容を「観察メモ」に入れて、未同定として登録しますか？')) return;
+    memo = memo ? memo + '\n\n' + desc : desc;
+    desc = '';
+  }
 
   // --- どの種に登録するか決める（登録被りチェック） ---
   let speciesId = null;      // 登録済みの種に追加するときの種ID
@@ -1932,20 +2266,32 @@ async function submitRegister() {
       // 新しい種。似た名前があれば念のため確認
       const similar = name ? checkName(name).similar : [];
       if (similar.length && !confirm(`似た名前の種があります：${similar.map(s => s.name).join('、')}\nそれでも「${name}」を新しい種として登録しますか？`)) return;
-      newSpecies = { id: newId(), name: name || sci, sciName: sci, ...taxon, memo: '', createdAt: nowIso() };
+      newSpecies = { id: newId(), name: name || sci, sciName: sci, ...taxon, memo: desc, coverId: '', createdAt: nowIso() };
     }
   }
 
+  // 登録済みの種の場合：解説が書き換えられたか
+  const known = speciesId ? getSpecies(speciesId) : null;
+  const descChanged = Boolean(known && desc && desc !== known.memo);
+
   // 観察記録を作るか？（写真か観察情報がある、または名前がない＝未同定として残す場合）
   const makeRecord = targets.length > 0 || hasObs || !(name || sci);
-  if (speciesId && !makeRecord) {
-    alert(`「${getSpecies(speciesId).name}」はすでに登録済みです。\n追加する写真・場所・時期・メモがあれば入力してください。`);
+  if (known && !makeRecord && !descChanged && !pendingIllust.length) {
+    alert(`「${known.name}」はすでに登録済みです。\n追加する写真・解説・図・場所・時期・メモがあれば入力してください。`);
     return;
   }
+
+  // 登録済みの種にすでに代表写真があるとき、新しい代表写真に変えるか確認
+  let setCover = Boolean(cover);
+  if (cover && known && known.coverId && getPhoto(known.coverId)) {
+    setCover = confirm(`「${known.name}」の代表写真を、今回の写真に変えますか？\n（キャンセルすると、今の代表写真のまま、写真は記録として追加されます）`);
+  }
+
   if (newSpecies) {
     await saveSpecies(newSpecies);
     speciesId = newSpecies.id;
   }
+  if (descChanged) await saveSpecies({ ...known, memo: desc });  // 解説を更新
 
   // --- 記録の共通部分 ---
   const blank = {};
@@ -1961,6 +2307,7 @@ async function submitRegister() {
   $('#r-submit').disabled = true;
   const useExif = $('#r-autodate').checked;
   let done = 0;
+  let coverRecordId = '';                                // 代表写真として保存した記録のID
   try {
     if (targets.length === 0 && makeRecord) {
       // 写真なしの記録を1件
@@ -1972,7 +2319,7 @@ async function submitRegister() {
       $('#r-progress').textContent = `保存中… ${done + 1} / ${targets.length}`;
       const img = await loadImage(x.file);
       const exif = useExif ? x.exif : null;
-      await savePhoto({
+      const record = {
         ...base,
         id: newId(),
         image: resizeImage(img, CONFIG.IMAGE_MAX, CONFIG.IMAGE_QUALITY),   // 保存用の写真
@@ -1982,15 +2329,32 @@ async function submitRegister() {
         stage: x.stage,
         sex: x.sex,
         createdAt: nowIso(),
-      });
+      };
+      await savePhoto(record);
+      if (x === cover) coverRecordId = record.id;
       done++;
+    }
+    // 代表写真を種に設定する
+    if (speciesId && coverRecordId && setCover) {
+      await saveSpecies({ ...getSpecies(speciesId), coverId: coverRecordId });
+    }
+    // 解説の図を種に追加する（同じ図がすでにあれば飛ばす）
+    if (speciesId && pendingIllust.length) {
+      const list = [...(getSpecies(speciesId).descImages || [])];
+      for (const x of pendingIllust) {
+        $('#r-progress').textContent = '図を保存中…';
+        const im = await makeIllustration(x.file, x.caption.trim());
+        if (!list.some(y => y.hash === im.hash)) list.push(im);
+      }
+      await saveSpecies({ ...getSpecies(speciesId), descImages: list });
     }
   } catch (e) {
     alert('保存中にエラーが起きました：' + e.message);
   }
   $('#r-submit').disabled = false;
   $('#r-progress').textContent = '';
-  toast(newSpecies && done === 0 ? `「${newSpecies.name}」を登録しました` : `登録しました（記録 ${done} 件）`);
+  toast(done === 0 ? (newSpecies ? `「${newSpecies.name}」を登録しました` : '解説・図を更新しました') : `登録しました（記録 ${done} 件）`);
+  // ※ 下の resetRegisterForm で、選んだ図（pendingIllust）も片付けられる
   resetRegisterForm(true);                               // 場所と時期は次の登録のために残す
   renderAll();
   if (speciesId) { showTab('species'); openSpecies(speciesId); }
@@ -2001,14 +2365,22 @@ async function submitRegister() {
 function resetRegisterForm(keepPlace = false) {
   pending.forEach(x => URL.revokeObjectURL(x.preview));
   pending = [];
-  const ids = ['#r-name', '#r-sci', '#r-memo'].concat(TAXON_KEYS.map(([key]) => '#r-' + key));
+  if (coverPending) URL.revokeObjectURL(coverPending.preview);
+  coverPending = null;
+  pendingIllust.forEach(x => URL.revokeObjectURL(x.preview));
+  pendingIllust = [];
+  renderPendingIllust();
+  descPrefill = null;
+  const ids = ['#r-name', '#r-sci', '#r-desc', '#r-memo'].concat(TAXON_KEYS.map(([key]) => '#r-' + key));
   if (!keepPlace) ids.push('#r-place', '#r-date', '#r-time', '#r-year', '#r-month');
   ids.forEach(id => { $(id).value = ''; });
   $('#r-stage').value = STAGES[0];
   $('#r-sex').value = SEXES[0];
+  renderCover();
   renderPending();
   onRegisterNameInput();
 }
+
 
 // -------------------------------------------------------------------
 // 11. データ・保存タブ（ファイルへの保存と読み込み）
@@ -2016,7 +2388,9 @@ function resetRegisterForm(keepPlace = false) {
 function renderDataPage() {
   const unid = state.photos.filter(p => !p.speciesId).length;
   // 写真データのおおよその大きさ（MB）。文字1つ ≒ 1バイトとして計算
-  const mb = state.photos.reduce((sum, p) => sum + (p.image || '').length + (p.thumb || '').length, 0) / 1024 / 1024;
+  const size = x => (x.image || '').length + (x.thumb || '').length;  // 写真1枚分の大きさ（文字数）
+  const mb = (state.photos.reduce((sum, p) => sum + size(p), 0) +
+              state.species.reduce((sum, s) => sum + (s.descImages || []).reduce((t, im) => t + size(im), 0), 0)) / 1024 / 1024;
   const unsaved = state.updatedAt > (state.savedAt || '');
   $('#page-data').innerHTML = `
     <div class="panel">
@@ -2191,6 +2565,9 @@ async function mergeData(data) {
       // こちらが空欄の項目だけ、読み込んだ情報で埋める
       const filled = { ...same };
       for (const k of ['sciName', 'memo', ...TAXON_KEYS.map(([key]) => key)]) if (!filled[k] && s[k]) filled[k] = s[k];
+      // 解説の図：こちらにない図だけ追加する
+      const mine = filled.descImages || [];
+      filled.descImages = mine.concat((s.descImages || []).filter(im => !mine.some(x => x.id === im.id || x.hash === im.hash)));
       await saveSpecies(filled);
     } else {
       idMap[s.id] = s.id;
@@ -2211,6 +2588,11 @@ async function mergeData(data) {
     }
     await savePhoto({ ...p, speciesId });
     ph++;
+  }
+  // 代表写真：こちらの種にまだ代表写真がなければ、読み込んだ方の設定を使う
+  for (const s of data.species) {
+    const mine = getSpecies(idMap[s.id]);
+    if (mine && (!mine.coverId || !getPhoto(mine.coverId)) && s.coverId && photoMap[s.coverId]) await saveSpecies({ ...mine, coverId: photoMap[s.coverId] });
   }
   // 類似種との比較：同じ組み合わせがすでにあれば、メモを付け足す
   for (const c of data.comparisons || []) {

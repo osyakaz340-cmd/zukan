@@ -493,6 +493,10 @@ const APP_TEMPLATE = document.documentElement.outerHTML;
 // -------------------------------------------------------------------
 // 1. 設定（ここを書き換えると動きを変えられます）
 // -------------------------------------------------------------------
+// アプリの版（バージョン）。「データ・保存」タブに表示される。
+// コードを変えてアップロードし直すときは、ここの日付も変えると、iPhone側が新しい版になったか確かめやすい
+const APP_VERSION = '2026-10-28';
+
 const CONFIG = {
   IMAGE_MAX: 1600,      // 保存する写真の長い辺の最大ピクセル数（小さくするとファイルが軽くなる）
   IMAGE_QUALITY: 0.82,  // 写真の画質（0〜1。小さいほど軽いが粗くなる）
@@ -2409,6 +2413,14 @@ function renderDataPage() {
     </div>
 
     <div class="panel">
+      <h2>アプリの版</h2>
+      <p style="margin:0">${APP_VERSION}</p>
+      ${location.protocol.startsWith('http') ? `
+        <p class="small">GitHub にアップロードし直したのに新しくならないときは、電波のある所でこのボタンを押してください（登録データは消えません）。</p>
+        <button class="btn" onclick="updateApp()">アプリを最新版に更新</button>` : ''}
+    </div>
+
+    <div class="panel">
       <h2>図鑑ファイルとして保存（おすすめ）</h2>
       <p class="small">アプリ本体と全データ（写真も）を1つの HTML ファイルにまとめて保存します。
         このファイルを USB メモリなどに入れておけば、スマホやPCで開くだけで図鑑を見られます（ネット接続不要）。</p>
@@ -2434,6 +2446,21 @@ function renderDataPage() {
       <p class="small">このブラウザ内のデータを全部消します（保存したファイルは消えません）。</p>
       <button class="btn danger" onclick="deleteAll()">すべてのデータを削除</button>
     </div>`;
+}
+
+// 「アプリを最新版に更新」ボタン：ネットから最新のアプリを取り直して、画面を読み込み直す
+// （端末に保存してあるアプリの部分だけを新しくする。登録データ（ブラウザ内保存）には触らない）
+async function updateApp() {
+  if (!navigator.onLine) { alert('電波のある所で押してください'); return; }
+  try {
+    const reg = navigator.serviceWorker && await navigator.serviceWorker.getRegistration();
+    if (reg) await reg.update();                         // sw.js（オフラインの仕組み）も最新か確認
+    await fetch('zukan.html', { cache: 'reload' });      // 最新のアプリを取り直す（端末の保存分も入れ替わる）
+  } catch (e) {
+    alert('更新できませんでした。電波のある所でもう一度試してください。');
+    return;
+  }
+  location.reload();                                     // 画面を読み込み直す
 }
 
 // iPhone/iPad の Safari で、ホーム画面のアイコンからではなく開いているか

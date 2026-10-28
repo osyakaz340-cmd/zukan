@@ -495,7 +495,7 @@ const APP_TEMPLATE = document.documentElement.outerHTML;
 // -------------------------------------------------------------------
 // アプリの版（バージョン）。「データ・保存」タブに表示される。
 // コードを変えてアップロードし直すときは、ここの日付も変えると、iPhone側が新しい版になったか確かめやすい
-const APP_VERSION = '2026-10-28b';
+const APP_VERSION = '2026-10-29';
 
 const CONFIG = {
   IMAGE_MAX: 1600,      // 保存する写真の長い辺の最大ピクセル数（小さくするとファイルが軽くなる）
@@ -2519,11 +2519,13 @@ function renderDataPage() {
         <button class="btn" onclick="updateApp()">アプリを最新版に更新</button>` : ''}
     </div>
 
+    ${fileLinkPanelHtml()}
+
     <div class="panel">
-      <h2>図鑑ファイルとして保存（おすすめ）</h2>
-      <p class="small">アプリ本体と全データ（写真も）を1つの HTML ファイルにまとめて保存します。
+      <h2>${canLinkFile ? '日付入りの名前で保存（控え用）' : '図鑑ファイルとして保存（おすすめ）'}</h2>
+      <p class="small">アプリ本体と全データ（写真も）を1つの HTML ファイルにまとめて、「生物図鑑_日付.html」という名前で保存します。
         このファイルを USB メモリなどに入れておけば、スマホやPCで開くだけで図鑑を見られます（ネット接続不要）。</p>
-      <button class="btn primary" onclick="exportHtml()">図鑑ファイル（.html）を保存</button>
+      <button class="btn ${canLinkFile ? '' : 'primary'}" onclick="exportHtml()">図鑑ファイル（.html）を保存</button>
     </div>
 
     <div class="panel">
@@ -2537,7 +2539,7 @@ function renderDataPage() {
       <p class="small">保存した図鑑ファイル（.html）やバックアップ（.json）を読み込みます。
         「統合」なら今のデータに追加（同じ種・同じ写真は重複しないようにまとめます）、「置き換え」なら今のデータを消して入れ替えます。
         スマホで追加した分をPCに取り込むときは「統合」を使ってください。</p>
-      <button class="btn" onclick="$('#import-file').click()">ファイルを選んで読み込む</button>
+      <button class="btn" onclick="openFromPicker()">ファイルを選んで読み込む</button>
     </div>
 
     <div class="panel">
@@ -2617,17 +2619,22 @@ async function saveFile(content, filename, mime, ext) {
 }
 
 // 図鑑ファイル（アプリ＋データ）を保存
-async function exportHtml() {
-  const prevSavedAt = state.savedAt;
-  state.savedAt = nowIso();
-  if (!state.updatedAt) state.updatedAt = state.savedAt;
+// 図鑑ファイル（アプリ＋全データ）の中身を作る
+function buildZukanHtml() {
   // データを文字にする。「<」を別の書き方に変えておくのは、HTMLの中で壊れないようにするため
   const json = JSON.stringify(buildData()).replace(/</g, '\\u003c');
   const openTag = '<script type="application/json" id="embedded-data">';
   const start = APP_TEMPLATE.indexOf(openTag) + openTag.length;  // 埋め込み場所の始まり
   const end = APP_TEMPLATE.indexOf('<\/script>', start);          // 埋め込み場所の終わり
-  const html = '<!DOCTYPE html>\n' + APP_TEMPLATE.slice(0, start) + json + APP_TEMPLATE.slice(end);
-  const ok = await saveFile(html, `生物図鑑_${stamp()}.html`, 'text/html', 'html');
+  return '<!DOCTYPE html>\n' + APP_TEMPLATE.slice(0, start) + json + APP_TEMPLATE.slice(end);
+}
+
+// 図鑑ファイルを、日付入りの名前で新しく保存する
+async function exportHtml() {
+  const prevSavedAt = state.savedAt;
+  state.savedAt = nowIso();
+  if (!state.updatedAt) state.updatedAt = state.savedAt;
+  const ok = await saveFile(buildZukanHtml(), `生物図鑑_${stamp()}.html`, 'text/html', 'html');
   if (!ok) { state.savedAt = prevSavedAt; return; }      // キャンセルされたら元に戻す
   await idbPut('meta', { key: 'times', updatedAt: state.updatedAt, savedAt: state.savedAt });
   renderSaveStatus();
@@ -2745,6 +2752,163 @@ async function deleteAll() {
 }
 
 // -------------------------------------------------------------------
+// 11.5 USB の図鑑ファイルと「つなぐ」（パソコンの Chrome / Edge 専用）
+//      一度選んだファイルをブラウザが覚えておき、次からはボタン1つで上書き保存・読み込みができる
+// -------------------------------------------------------------------
+
+// この機能が使えるブラウザか（パソコンの Chrome・Edge など。iPhone の Safari では使えない）
+const canLinkFile = 'showSaveFilePicker' in window && 'showOpenFilePicker' in window;
+
+let saveHandle = null;   // 上書き保存する先のファイル（ブラウザがファイルを指すための「取っ手」）
+let openHandle = null;   // 前回読み込んだファイル
+
+// 図鑑ファイルの種類（ファイルを選ぶ画面で、HTMLファイルだけ表示するため）
+const ZUKAN_FILE_TYPES = [{ description: '図鑑ファイル', accept: { 'text/html': ['.html', '.htm'] } }];
+
+// 起動時：前回覚えたファイルを、ブラウザ内保存から取り出す
+async function loadFileLinks() {
+  if (!canLinkFile) return;
+  const metas = await idbGetAll('meta');
+  saveHandle = (metas.find(m => m.key === 'saveHandle') || {}).handle || null;
+  openHandle = (metas.find(m => m.key === 'openHandle') || {}).handle || null;
+}
+
+// ファイルを覚えておく（ブラウザを閉じても忘れないように、ブラウザ内保存に入れる）
+async function rememberHandle(key, handle) {
+  try { await idbPut('meta', { key, handle }); } catch (e) { /* 覚えられなくても、今回は使える */ }
+}
+
+// ファイルを使う許可を確認する。ブラウザを開き直した後などは「許可しますか？」と聞かれる
+//   mode：'read'（読むだけ）か 'readwrite'（書き込みも）
+async function ensurePermission(handle, mode) {
+  if (await handle.queryPermission({ mode }) === 'granted') return true;
+  return (await handle.requestPermission({ mode })) === 'granted';
+}
+
+// 「💾 USB に上書き保存」ボタン（キーボードの Ctrl+S でも動く）
+async function overwriteSave() {
+  if (!saveHandle) { await chooseSaveTarget(); return; }  // まだ保存先がなければ、選ぶところから
+  try {
+    if (!await ensurePermission(saveHandle, 'readwrite')) {
+      alert('ファイルへの書き込みが許可されませんでした。');
+      return;
+    }
+    await writeZukanTo(saveHandle);
+  } catch (e) {
+    alert(`「${saveHandle.name}」に保存できませんでした。\nUSB メモリがつながっているか確認してください。\n` +
+          `ファイルを移動・削除した場合は「保存先を変更」で選び直してください。\n（${e.message}）`);
+  }
+}
+
+// 「保存先を変更」ボタン：保存先のファイルを選び、そこに保存する
+async function chooseSaveTarget() {
+  let handle;
+  try {
+    handle = await window.showSaveFilePicker({ suggestedName: '生物図鑑.html', types: ZUKAN_FILE_TYPES });
+  } catch (e) {
+    if (e.name !== 'AbortError') alert('保存先を選べませんでした：' + e.message);
+    return;                                              // キャンセルされたら何もしない
+  }
+  saveHandle = handle;
+  await rememberHandle('saveHandle', handle);
+  try {
+    await writeZukanTo(handle);
+  } catch (e) {
+    alert('保存できませんでした：' + e.message);
+  }
+}
+
+// 図鑑ファイルを書き込む
+// （書き込みは一時ファイルに行い、最後に入れ替わるので、途中で失敗しても元のファイルは壊れない）
+async function writeZukanTo(handle) {
+  const prevSavedAt = state.savedAt;
+  state.savedAt = nowIso();
+  if (!state.updatedAt) state.updatedAt = state.savedAt;
+  try {
+    const writer = await handle.createWritable();
+    await writer.write(new Blob([buildZukanHtml()], { type: 'text/html' }));
+    await writer.close();
+  } catch (e) {
+    state.savedAt = prevSavedAt;                         // 失敗したら「保存した日時」を元に戻す
+    throw e;
+  }
+  await idbPut('meta', { key: 'times', updatedAt: state.updatedAt, savedAt: state.savedAt });
+  renderSaveStatus();
+  if (state.tab === 'data') renderDataPage();
+  toast(`「${handle.name}」に保存しました`);
+}
+
+// 「ファイルを選んで読み込む」ボタン：選んだファイルを覚えておき、次から「前回のファイル」として使う
+async function openFromPicker() {
+  if (!canLinkFile) { $('#import-file').click(); return; }  // 使えないブラウザでは今まで通りの方法
+  let handles;
+  try {
+    handles = await window.showOpenFilePicker({
+      types: [{ description: '図鑑ファイル・バックアップ', accept: { 'text/html': ['.html', '.htm'], 'application/json': ['.json'] } }],
+    });
+  } catch (e) {
+    if (e.name !== 'AbortError') $('#import-file').click();  // うまくいかなければ今まで通りの方法で
+    return;
+  }
+  openHandle = handles[0];
+  await rememberHandle('openHandle', openHandle);
+  await importFile(await openHandle.getFile());
+  if (state.tab === 'data') renderDataPage();
+}
+
+// 「📂 前回のファイルを読み込む」ボタン（前回読み込んだファイル。なければ上書き保存先のファイル）
+async function openPrevious() {
+  const handle = openHandle || saveHandle;
+  if (!handle) { await openFromPicker(); return; }      // まだなければ、選ぶところから
+  try {
+    if (!await ensurePermission(handle, 'read')) {
+      alert('ファイルの読み込みが許可されませんでした。');
+      return;
+    }
+    await importFile(await handle.getFile());
+  } catch (e) {
+    alert(`「${handle.name}」を読み込めませんでした。\nUSB メモリがつながっているか確認してください。\n` +
+          `ファイルを移動・削除した場合は「ファイルを選んで読み込む」で選び直してください。\n（${e.message}）`);
+  }
+}
+
+// USB のファイルとつなぐ部分の表示（「データ・保存」タブの中）
+function fileLinkPanelHtml() {
+  if (!canLinkFile) return '';
+  const readFrom = openHandle || saveHandle;
+  return `
+    <div class="panel">
+      <h2>USB の図鑑ファイル</h2>
+      <dl class="info">
+        <dt>上書き保存先</dt><dd>${saveHandle ? esc(saveHandle.name) : '未設定（最初の1回だけ保存先を選びます）'}</dd>
+        <dt>前回のファイル</dt><dd>${readFrom ? esc(readFrom.name) : '未設定'}</dd>
+      </dl>
+      <div class="row">
+        <button class="btn primary" onclick="overwriteSave()">💾 USB に上書き保存</button>
+        <button class="btn" onclick="chooseSaveTarget()">保存先を変更</button>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <button class="btn" onclick="openPrevious()">📂 前回のファイルを読み込む</button>
+        <button class="btn" onclick="openFromPicker()">ファイルを選んで読み込む</button>
+      </div>
+      <p class="small">
+        ・上書き保存は、キーボードの <b>Ctrl+S</b>（Mac は ⌘+S）でもできます。<br>
+        ・表示されるのはファイル名だけです（どのフォルダかは表示されません）。<br>
+        ・ブラウザを開き直した後は、最初に「ファイルの編集を許可しますか？」と聞かれます。許可してください。<br>
+        ・iPhone で保存したファイルを取り込むときは、「ファイルを選んで読み込む」→「統合」を使ってください。
+      </p>
+    </div>`;
+}
+
+// Ctrl+S（Mac は ⌘+S）で USB に上書き保存する
+document.addEventListener('keydown', e => {
+  if (canLinkFile && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+    e.preventDefault();                                  // ブラウザの「ページを保存」は出さない
+    overwriteSave();
+  }
+});
+
+// -------------------------------------------------------------------
 // 12. 起動処理（ページを開いたときに最初に1回だけ動く）
 // -------------------------------------------------------------------
 async function init() {
@@ -2791,6 +2955,7 @@ async function init() {
   }
   // ブラウザに「このデータは勝手に消さないで」とお願いする（対応しているブラウザのみ）
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+  await loadFileLinks();                                 // 前回つないだ USB のファイルを思い出す
   resetRegisterForm();
   renderAll();
 }

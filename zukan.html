@@ -172,7 +172,6 @@ h3.stage-head { font-size: 14px; margin: 14px 0 6px; border-left: 4px solid var(
   display: grid; gap: 8px; margin-top: 10px;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
 }
-.illust-grid.one { grid-template-columns: 1fr; margin-top: 0; }  /* 比較画面では縦に1列 */
 .illust-grid figure {
   margin: 0; cursor: zoom-in; border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
   background: #fff;                                 /* イラストは白い背景の方が見やすい */
@@ -195,10 +194,11 @@ h3.stage-head { font-size: 14px; margin: 14px 0 6px; border-left: 4px solid var(
 }
 .cmp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 8px 0 12px; }  /* 左右に2つ並べる（スマホでも） */
 .cmp-side { min-width: 0; }
-.cmp-name { font-weight: bold; color: var(--main); cursor: pointer; margin-bottom: 4px; }
 .cmp-big {
   width: 100%; aspect-ratio: 1 / 1; object-fit: contain; background: #000; border-radius: 8px; cursor: zoom-in; display: block;
 }
+.cmp-big.illust { background: #fff; border: 1px solid var(--line); }  /* 図は白い背景で */
+.cmp-pick { font-size: 13px; padding: 4px 6px; margin-bottom: 4px; font-weight: bold; color: var(--main); }  /* 左右の「何を表示するか」 */
 .cmp-big.noimg { display: flex; align-items: center; justify-content: center; color: #aaa; font-size: 13px; cursor: default; }
 .cmp-strip { display: flex; gap: 4px; overflow-x: auto; margin-top: 4px; padding-bottom: 2px; }  /* 写真を選ぶ帯（横にスクロール） */
 .cmp-strip img {
@@ -495,7 +495,7 @@ const APP_TEMPLATE = document.documentElement.outerHTML;
 // -------------------------------------------------------------------
 // アプリの版（バージョン）。「データ・保存」タブに表示される。
 // コードを変えてアップロードし直すときは、ここの日付も変えると、iPhone側が新しい版になったか確かめやすい
-const APP_VERSION = '2026-10-28';
+const APP_VERSION = '2026-10-28b';
 
 const CONFIG = {
   IMAGE_MAX: 1600,      // 保存する写真の長い辺の最大ピクセル数（小さくするとファイルが軽くなる）
@@ -1752,17 +1752,41 @@ async function addSimilarById(speciesId, otherId) {
   openCompare(c.id, speciesId);                          // …比較画面を開く
 }
 
-// ---- 比較画面（写真を左右に並べて、違いをメモする） ----
+// ---- 比較画面（写真や解説の図を左右に並べて、違いをメモする） ----
 // leftId ＝ 左側に出す種（開いた種のページの種が左に来るようにする）
-function openCompare(cid, leftId) { pushModal(() => compareHtml(cid, leftId)); }
+function openCompare(cid, leftId) {
+  compareView = null;                                    // 表示の設定は最初の状態から
+  pushModal(() => compareHtml(cid, leftId));
+}
 
-let compareMode = 'photo';  // 比較画面で何を並べるか：'photo'＝写真、'illust'＝解説の図
+// 比較画面の左右それぞれに「何を表示するか」の設定
+//   { cid:比較のID, leftId/rightId:開いたときの左右の種,
+//     left:{ sp:種ID, kind:'photo'(写真) か 'illust'(解説の図), id:表示中の写真や図のID }, right:{…} }
+let compareView = null;
 
-// 比較画面の「写真で比べる／解説の図で比べる」を切り替える
-function setCompareMode(mode) {
-  flushCompareMemo();
-  compareMode = mode;
-  drawModal(true);
+// 表示の設定を用意する（まだないか、別の比較のものなら作り直す）
+function ensureCompareView(cid, leftId, rightId) {
+  if (!compareView || compareView.cid !== cid) {
+    compareView = {
+      cid, leftId, rightId,
+      left: { sp: leftId, kind: 'photo', id: '' },       // 最初は左右とも写真
+      right: { sp: rightId, kind: 'photo', id: '' },
+    };
+  }
+  return compareView;
+}
+
+// 片側に表示する写真を決める（選んだ写真 → その種で選んであった写真 → 代表写真 の順）
+function viewPhoto(c, v) {
+  const chosen = getPhoto(v.id);
+  if (chosen && chosen.speciesId === v.sp && chosen.thumb) return chosen;
+  return comparePhoto(c, v.sp);
+}
+
+// 片側に表示する図を決める（選んだ図 → その種の最初の図）
+function viewIllust(v) {
+  const imgs = getSpecies(v.sp).descImages || [];
+  return imgs.find(im => im.id === v.id) || imgs[0] || null;
 }
 
 function compareHtml(cid, leftId) {
@@ -1771,36 +1795,54 @@ function compareHtml(cid, leftId) {
   const rightId = otherSide(c, leftId);
   const left = getSpecies(leftId), right = getSpecies(rightId);
   if (!left || !right) return '<p>種が削除されたため、この比較は表示できません。</p>';
+  const view = ensureCompareView(cid, leftId, rightId);
+  const hasIllust = [left, right].some(sp => (sp.descImages || []).length);  // どちらかに図があるか
 
-  // 片側（1つの種）の表示を作る
-  const side = sp => {
-    if (compareMode === 'illust') {                      // 「解説の図」を並べる場合
+  // 片側の表示を作る（slot は 'left' か 'right'）
+  const side = slot => {
+    const v = view[slot];
+    const sp = getSpecies(v.sp);
+    // 何を表示するかを選ぶプルダウン：「〇〇の写真」「〇〇の図」（図は、ある種だけ）
+    const options = [left, right].flatMap(s => [
+      [`${s.id}|photo`, `${s.name}の写真`],
+      ...((s.descImages || []).length ? [[`${s.id}|illust`, `${s.name}の図`]] : []),
+    ]);
+    const picker = `
+      <select class="cmp-pick" onchange="setCompareSource('${slot}', this.value)">
+        ${options.map(([val, label]) => `<option value="${val}" ${val === `${v.sp}|${v.kind}` ? 'selected' : ''}>${esc(label)}</option>`).join('')}
+      </select>`;
+
+    if (v.kind === 'illust') {                           // 解説の図を表示
+      const cur = viewIllust(v);
       const imgs = sp.descImages || [];
       return `
         <div class="cmp-side">
-          <div class="cmp-name" onclick="openSpecies('${sp.id}')">${esc(sp.name)} ›</div>
-          ${imgs.length ? `<div class="illust-grid one">${imgs.map(im => `
-            <figure onclick="viewDescImage('${sp.id}', '${im.id}')">
-              <img src="${im.image}" alt="">
-              ${im.caption ? `<figcaption>${esc(im.caption)}</figcaption>` : ''}
-            </figure>`).join('')}</div>`
-            : `<div class="cmp-big noimg">図なし</div>
-               <button class="btn" style="margin-top:4px;padding:2px 8px;font-size:12px" onclick="openIllustEdit('${sp.id}')">図を追加</button>`}
+          ${picker}
+          ${cur
+            ? `<img class="cmp-big illust" src="${cur.image}" alt="" onclick="viewDescImage('${sp.id}', '${cur.id}')">
+               <div class="small">🖼 ${esc(cur.caption) || '（説明なし）'}</div>`
+            : `<div class="cmp-big noimg">図なし</div>`}
+          ${imgs.length > 1 ? `
+            <div class="cmp-strip">${imgs.map(im => `
+              <img src="${im.thumb}" alt="" title="${esc(im.caption)}" class="${cur && im.id === cur.id ? 'sel' : ''}"
+                   style="background:#fff" onclick="pickCompareItem('${cid}', '${slot}', '${im.id}')">`).join('')}
+            </div>` : ''}
         </div>`;
     }
-    const cur = comparePhoto(c, sp.id);                  // 今表示している写真
+
+    const cur = viewPhoto(c, v);                         // 写真を表示
     const photos = photosOf(sp.id).filter(p => p.thumb); // 写真のある記録だけ
     return `
       <div class="cmp-side">
-        <div class="cmp-name" onclick="openSpecies('${sp.id}')">${esc(sp.name)} ›</div>
+        ${picker}
         ${cur
           ? `<img class="cmp-big" src="${cur.image}" alt="" onclick="viewImage('${cur.id}')">
-             <div class="small">${esc(cur.stage)}${cur.sex && cur.sex !== '不明' ? '・' + esc(cur.sex) : ''}・${fmtObs(cur)}</div>`
+             <div class="small">📷 ${esc(cur.stage)}${cur.sex && cur.sex !== '不明' ? '・' + esc(cur.sex) : ''}・${fmtObs(cur)}</div>`
           : `<div class="cmp-big noimg">写真なし</div>`}
         ${photos.length > 1 ? `
           <div class="cmp-strip">${photos.map(p => `
             <img src="${p.thumb}" alt="" title="${esc(p.stage)}" class="${cur && p.id === cur.id ? 'sel' : ''}"
-                 onclick="pickComparePhoto('${cid}', '${sp.id}', '${p.id}')">`).join('')}
+                 onclick="pickCompareItem('${cid}', '${slot}', '${p.id}')">`).join('')}
           </div>` : ''}
       </div>`;
   };
@@ -1812,19 +1854,27 @@ function compareHtml(cid, leftId) {
   return `
     <h2 style="margin:0 40px 6px 0">${esc(left.name)} と ${esc(right.name)} の違い</h2>
     <div class="row" style="margin-bottom:6px">
-      <button class="btn ${compareMode === 'photo' ? 'primary' : ''}" style="padding:4px 12px" onclick="setCompareMode('photo')">📷 写真で比べる</button>
-      <button class="btn ${compareMode === 'illust' ? 'primary' : ''}" style="padding:4px 12px" onclick="setCompareMode('illust')">🖼 解説の図で比べる</button>
+      <button class="btn" style="padding:4px 12px" onclick="compareAsPhotos()">📷 写真どうし</button>
+      <button class="btn" style="padding:4px 12px" ${hasIllust ? '' : 'disabled'} onclick="compareIllustWithPhoto()">🖼 図と写真</button>
     </div>
-    <p class="small" style="margin:0 0 6px">${compareMode === 'photo'
-      ? '下の小さい写真をタップすると表示する写真を変えられます。大きい写真をタップすると拡大します。'
-      : '各種の「解説の図」を並べています。図をタップすると拡大します。'}</p>
-    ${compareMode === 'photo' && stages.length ? `
-      <label class="row small">成長段階をそろえる：
+    <p class="small" style="margin:0 0 6px">
+      左右それぞれ、上のプルダウンで「写真」か「解説の図」かを選べます（どちらの種のものでもOK）。
+      下の小さい画像をタップすると切り替わり、大きい画像をタップすると拡大します。
+      ${hasIllust ? '' : '<br>解説の図は、種のページの「🖼 図を追加・編集」から追加できます。'}
+    </p>
+    ${stages.length ? `
+      <label class="row small">写真の成長段階をそろえる：
         <select style="width:auto" onchange="alignCompareStage('${cid}', this.value)">
           <option value="">選ぶ</option>${stages.map(st => `<option>${esc(st)}</option>`).join('')}
         </select>
       </label>` : ''}
-    <div class="cmp-grid">${side(left)}${side(right)}</div>
+    <div class="cmp-grid">${side('left')}${side('right')}</div>
+    <div class="row small" style="margin:-6px 0 10px">
+      <button class="btn" style="padding:2px 10px;font-size:12px" onclick="swapCompareSides()">⇄ 左右を入れ替え</button>
+      <span style="margin-left:auto">種のページ：
+        <a href="#" onclick="openSpecies('${left.id}'); return false">${esc(left.name)}</a> /
+        <a href="#" onclick="openSpecies('${right.id}'); return false">${esc(right.name)}</a></span>
+    </div>
     <label class="f">違い・見分け方のメモ（自動で保存されます）
       <textarea id="cmp-memo" data-cid="${cid}" rows="7"
         placeholder="例：前翅の付け根が、${esc(left.name)}は黒い縞模様、${esc(right.name)}はべったり黒い"
@@ -1835,6 +1885,56 @@ function compareHtml(cid, leftId) {
       <button class="btn" onclick="closeModal()">閉じる</button>
       <button class="btn danger" style="margin-left:auto" onclick="deleteComparison('${cid}')">この比較を削除</button>
     </div>`;
+}
+
+// プルダウンで、片側に表示するもの（どの種の・写真か図か）を変える
+function setCompareSource(slot, value) {
+  flushCompareMemo();
+  const [sp, kind] = value.split('|');                   // 'ID|photo' を ID と photo に分ける
+  compareView[slot] = { sp, kind, id: '' };
+  drawModal(true);
+}
+
+// 小さい画像をタップして、片側に表示する写真や図を選ぶ
+async function pickCompareItem(cid, slot, itemId) {
+  flushCompareMemo();
+  const v = compareView[slot];
+  v.id = itemId;
+  if (v.kind === 'photo') {                              // 写真なら、その種で選んだ写真として覚えておく
+    const c = getComparison(cid);
+    if (v.sp === c.a || v.sp === c.b) {
+      await saveComparison({ ...c, [v.sp === c.a ? 'photoA' : 'photoB']: itemId });
+    }
+  }
+  drawModal(true);                                       // スクロール位置はそのままで描き直す
+}
+
+// 「📷 写真どうし」：開いたときと同じ、左右それぞれの種の写真に戻す
+function compareAsPhotos() {
+  flushCompareMemo();
+  compareView.left = { sp: compareView.leftId, kind: 'photo', id: '' };
+  compareView.right = { sp: compareView.rightId, kind: 'photo', id: '' };
+  drawModal(true);
+}
+
+// 「🖼 図と写真」：左に解説の図、右に写真を並べる
+// 図は、開いた種のページの種にあればその図、なければもう一方の種の図
+// 写真は、開いた種のページの種の写真（もう一方の種の写真は、右のプルダウンで切り替えられる）
+function compareIllustWithPhoto() {
+  flushCompareMemo();
+  const first = compareView.leftId, second = compareView.rightId;
+  const illustSp = (getSpecies(first).descImages || []).length ? first : second;
+  const photoSp = first;
+  compareView.left = { sp: illustSp, kind: 'illust', id: '' };
+  compareView.right = { sp: photoSp, kind: 'photo', id: '' };
+  drawModal(true);
+}
+
+// 左右の表示を入れ替える
+function swapCompareSides() {
+  flushCompareMemo();
+  [compareView.left, compareView.right] = [compareView.right, compareView.left];
+  drawModal(true);
 }
 
 // メモの自動保存：入力が0.6秒止まったら保存する（1文字ごとに保存すると重いため）
@@ -1858,24 +1958,23 @@ function flushCompareMemo() {
   if (saved) saved.textContent = '✔ 保存しました';
 }
 
-// 比較に表示する写真を選ぶ
-async function pickComparePhoto(cid, speciesId, photoId) {
-  flushCompareMemo();
-  const c = getComparison(cid);
-  await saveComparison({ ...c, [speciesId === c.a ? 'photoA' : 'photoB']: photoId });  // a側かb側か
-  drawModal(true);                                       // スクロール位置はそのままで描き直す
-}
-
-// 両方の種で、同じ成長段階の写真を表示する（例：幼虫どうしを並べる）
+// 写真を表示している側で、同じ成長段階の写真を表示する（例：幼虫どうしを並べる）
 async function alignCompareStage(cid, stage) {
   if (!stage) return;
   flushCompareMemo();
   const c = { ...getComparison(cid) };
   const missing = [];
-  for (const [id, key] of [[c.a, 'photoA'], [c.b, 'photoB']]) {
-    const p = photosOf(id).find(x => x.thumb && x.stage === stage);
-    if (p) c[key] = p.id;
-    else missing.push(getSpecies(id).name);              // その段階の写真がない種
+  for (const slot of ['left', 'right']) {
+    const v = compareView[slot];
+    if (v.kind !== 'photo') continue;                    // 図を表示している側はそのまま
+    const p = photosOf(v.sp).find(x => x.thumb && x.stage === stage);
+    if (p) {
+      v.id = p.id;
+      if (v.sp === c.a) c.photoA = p.id;                 // その種で選んだ写真として覚えておく
+      if (v.sp === c.b) c.photoB = p.id;
+    } else {
+      missing.push(getSpecies(v.sp).name);               // その段階の写真がない種
+    }
   }
   await saveComparison(c);
   drawModal(true);
